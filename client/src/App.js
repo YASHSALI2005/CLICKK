@@ -242,6 +242,19 @@ export default function App() {
     }
   };
 
+  const handleDeleteFolder = async (name, e) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete folder '${name}' and all its contents?`)) return;
+    await axios.delete(`http://localhost:5000/api/file?name=${encodeURIComponent(name)}`);
+    setFiles(files.filter(f => !f.startsWith(name)));
+    setOpenTabs(openTabs.filter(f => !f.startsWith(name)));
+    if (currentFile && currentFile.startsWith(name)) {
+      setCurrentFile('');
+      setCode('');
+      setRunOutput('');
+    }
+  };
+
   const closeTab = (name, e) => {
     e.stopPropagation();
     if (currentFile === name && code !== undefined) {
@@ -320,6 +333,13 @@ export default function App() {
                 >
                 <img src={'/folder2.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
                 </button>
+                <span
+                  title="Delete folder"
+                  style={{marginLeft:8, color:'#e57373', cursor:'pointer', fontSize:'1.1em'}} 
+                  onClick={e => handleDeleteFolder(fullPath + '/', e)}
+                >
+                  <img src={'/delete.png'} alt="Delete Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
+                </span>
               </div>
               <div style={{ marginLeft: 16 }}>
                 {renderNode(child, fullPath + '/')}
