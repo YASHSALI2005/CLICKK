@@ -18,142 +18,116 @@ const path = require('path');
 const { exec } = require('child_process');
 const WebSocket = require('ws');
 const pty = require('node-pty');
-const AWS = require('aws-sdk');
 require('dotenv').config();
 
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION
-});
-const S3_BUCKET = process.env.AWS_S3_BUCKET;
-
-// S3 upload helper
-async function uploadFileToS3(key, content) {
-  return s3.upload({
-    Bucket: S3_BUCKET,
-    Key: key,
-    Body: content
-  }).promise();
-}
-
-// S3 download helper
-async function downloadFileFromS3(key) {
-  const data = await s3.getObject({ Bucket: S3_BUCKET, Key: key }).promise();
-  return data.Body.toString();
-}
-
-// S3 delete helper
-async function deleteFileFromS3(key) {
-  return s3.deleteObject({ Bucket: S3_BUCKET, Key: key }).promise();
-}
-
-async function listFilesFromS3() {
-  try {
-    const data = await s3.listObjectsV2({ Bucket: S3_BUCKET }).promise();
-    return data.Contents.map(item => item.Key);
-  } catch (err) {
-    console.error('Error listing files from S3:', err);
-    return [];
-  }
-}
-
-// Helper: Recursively download all S3 files to a local directory, preserving folder structure
-async function mirrorS3ToLocal(localDir) {
-  const data = await s3.listObjectsV2({ Bucket: S3_BUCKET }).promise();
-  for (const item of data.Contents) {
-    const key = item.Key;
-    // Skip 'folders' (S3 has zero-byte objects for folders sometimes)
-    if (key.endsWith('/')) continue;
-    const filePath = path.join(localDir, key);
-    const fileDir = path.dirname(filePath);
-    if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
-    const fileData = await s3.getObject({ Bucket: S3_BUCKET, Key: key }).promise();
-    const body = fileData.Body;
-    console.log(`Writing S3 object ${key} (${body.length} bytes) to ${filePath}`);
-    fs.writeFileSync(filePath, Buffer.isBuffer(body) ? body : Buffer.from(body));
-  }
-}
-
-// Helper: Recursively upload all files in a local directory to S3, preserving folder structure
-async function syncLocalToS3(localDir, prefix = '') {
-  const entries = fs.readdirSync(localDir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(localDir, entry.name);
-    const s3Key = prefix ? prefix + '/' + entry.name : entry.name;
-    if (entry.isDirectory()) {
-      await syncLocalToS3(fullPath, s3Key);
-    } else if (entry.isFile()) {
-      const fileContent = fs.readFileSync(fullPath);
-      await s3.upload({ Bucket: S3_BUCKET, Key: s3Key, Body: fileContent }).promise();
-    }
-  }
-}
+// Set your project root (where files are stored)
+const PROJECT_ROOT = path.join(__dirname, 'projects', 'demo');
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// Set your project root (where files are stored)
-const PROJECT_ROOT = path.join(__dirname, 'projects', 'demo');
+// Helper: Recursively list all files and folders in a directory
+function listFilesRecursive(dir, prefix = '') {
+  let results = [];
+  const list = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of list) {
+    const fullPath = path.join(dir, entry.name);
+    const relPath = prefix + entry.name + (entry.isDirectory() ? '/' : '');
+    results.push(relPath);
+    if (entry.isDirectory()) {
+      results = results.concat(listFilesRecursive(fullPath, relPath));
+    }
+  }
+  return results;
+}
 
 // List files
-app.get('/api/files', async (req, res) => {
-  const files = await listFilesFromS3();
-  res.json(files);
+app.get('/api/files', (req, res) => {
+  try {
+    if (!fs.existsSync(PROJECT_ROOT)) {
+      fs.mkdirSync(PROJECT_ROOT, { recursive: true });
+    }
+    const files = listFilesRecursive(PROJECT_ROOT);
+    res.json(files);
+  } catch (err) {
+    console.error('Error listing files:', err);
+    res.status(500).send('Error listing files');
+  }
 });
 
 // Read file
-app.get('/api/file', async (req, res) => {
+app.get('/api/file', (req, res) => {
   try {
-    const content = await downloadFileFromS3(req.query.name);
+    const filePath = path.join(PROJECT_ROOT, req.query.name);
+    if (!fs.existsSync(filePath) || fs.lstatSync(filePath).isDirectory()) {
+      return res.status(404).send('File not found');
+    }
+    const content = fs.readFileSync(filePath, 'utf8');
     res.json({ content });
   } catch (err) {
-    console.error(`Error getting file ${req.query.name} from S3:`, err);
-    res.status(500).send('Error getting file from S3');
+    console.error(`Error getting file ${req.query.name}:`, err);
+    res.status(500).send('Error getting file');
   }
 });
 
-// Save file
-app.post('/api/file', async (req, res) => {
+// Save file or create folder
+app.post('/api/file', (req, res) => {
   try {
-    console.log('Received file save request:', req.body);
-    if (typeof req.body.content === 'string') {
-      console.log('Content length:', req.body.content.length);
-    } else {
-      console.log('Content is not a string:', typeof req.body.content);
+    const filePath = path.join(PROJECT_ROOT, req.body.name);
+    if (req.body.name.endsWith('/')) {
+      // Create folder
+      if (!fs.existsSync(filePath)) {
+        fs.mkdirSync(filePath, { recursive: true });
+      }
+      return res.sendStatus(200);
     }
-    await uploadFileToS3(req.body.name, req.body.content);
+    // Create or update file
+    fs.writeFileSync(filePath, req.body.content || '');
     res.sendStatus(200);
   } catch (err) {
-    console.error(`Error saving file ${req.body.name} to S3:`, err);
-    res.status(500).send('Error saving file to S3');
+    console.error(`Error saving file/folder ${req.body.name}:`, err);
+    res.status(500).send('Error saving file/folder');
   }
 });
 
-// Delete file endpoint
-app.delete('/api/file', async (req, res) => {
+// Delete file or folder
+app.delete('/api/file', (req, res) => {
   try {
-    await deleteFileFromS3(req.query.name);
+    const filePath = path.join(PROJECT_ROOT, req.query.name);
+    if (!fs.existsSync(filePath)) return res.sendStatus(200);
+    const stat = fs.lstatSync(filePath);
+    if (stat.isDirectory()) {
+      fs.rmSync(filePath, { recursive: true, force: true });
+    } else {
+      fs.unlinkSync(filePath);
+    }
     res.sendStatus(200);
   } catch (err) {
-    console.error(`Error deleting file ${req.query.name} from S3:`, err);
-    res.status(500).send('Error deleting file from S3');
+    console.error(`Error deleting file/folder ${req.query.name}:`, err);
+    res.status(500).send('Error deleting file/folder');
   }
 });
 
 // Run file endpoint
-app.post('/api/run', async (req, res) => {
+app.post('/api/run', (req, res) => {
   try {
     const { name } = req.body;
-    const content = await downloadFileFromS3(name);
-    
+    const filePath = path.join(PROJECT_ROOT, name);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send('File not found');
+    }
+    const content = fs.readFileSync(filePath, 'utf8');
     // Create a temporary file to execute
     const tempDir = path.join(__dirname, 'temp');
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
     const tempFilePath = path.join(tempDir, name);
+    // Ensure the directory for the temp file exists
+    const tempFileDir = path.dirname(tempFilePath);
+    if (!fs.existsSync(tempFileDir)) {
+      fs.mkdirSync(tempFileDir, { recursive: true });
+    }
     fs.writeFileSync(tempFilePath, content);
-
     let output = '';
     if (name.endsWith('.js')) {
       exec(`node "${tempFilePath}"`, (err, stdout, stderr) => {
@@ -187,18 +161,11 @@ if (!fs.existsSync(PROJECT_ROOT)) {
 
 const wss = new WebSocket.Server({ port: 8081 });
 
-wss.on('connection', async function connection(ws) {
+wss.on('connection', function connection(ws) {
   // Create a unique temp dir for this session
   const sessionId = Date.now() + '-' + Math.random().toString(36).slice(2);
   const tempDir = path.join(__dirname, 'temp', 'terminal-' + sessionId);
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-  // Mirror S3 to local temp dir
-  try {
-    await mirrorS3ToLocal(tempDir);
-  } catch (err) {
-    console.error('Error mirroring S3 to local temp dir:', err);
-    ws.send('\r\nError syncing files from S3. Terminal may not work as expected.\r\n');
-  }
   // Use cmd.exe on Windows, bash otherwise
   const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
   const ptyProcess = pty.spawn(shell, [], {
@@ -224,14 +191,8 @@ wss.on('connection', async function connection(ws) {
     ptyProcess.write(message);
   });
 
-  ws.on('close', async () => {
+  ws.on('close', () => {
     ptyProcess.kill();
-    // Sync tempDir back to S3
-    try {
-      await syncLocalToS3(tempDir);
-    } catch (err) {
-      console.error('Error syncing local temp dir to S3:', err);
-    }
     // Clean up tempDir
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });

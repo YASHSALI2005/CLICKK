@@ -79,6 +79,17 @@ const getFileExtension = (filename) => {
   return parts.length > 1 ? parts.pop().toLowerCase() : '';
 };
 
+const getFileIcon = (filename) => {
+  const ext = getFileExtension(filename);
+  if (ext === 'js') return '/icons/file_type_js_official.svg';
+  if (ext === 'py') return '/icons/file_type_python.svg';
+  if (ext === 'html') return '/icons/file_type_html.svg';
+  if (ext === 'css') return '/icons/file_type_css.svg';
+  if (ext === 'ts' || ext === 'tsx') return '/icons/file_type_tsconfig.svg';
+  // fallback generic file icon
+  return '/icons/folder_type_template.svg';
+};
+
 export default function App() {
   const [files, setFiles] = useState([]);
   const [currentFile, setCurrentFile] = useState('');
@@ -291,9 +302,7 @@ export default function App() {
           return isFolder ? (
             <li key={fullPath} style={{ fontWeight: 600, color: '#4fc3f7', marginBottom: 2 }}>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <svg width="16" height="16" fill="none" stroke="#FFC107" strokeWidth="2" viewBox="0 0 24 24" style={{marginRight:4}}>
-                  <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                </svg>
+                <img src={'/folder2.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
                 {name}
                 <button
                   className="add-btn"
@@ -309,7 +318,7 @@ export default function App() {
                   style={{marginLeft: 2, fontSize: '1em', padding: '0 6px', height: 22, width: 22}}
                   onClick={e => { e.stopPropagation(); handleAddFolder(String(fullPath) + '/'); }}
                 >
-                  &#128193;
+                <img src={'/folder2.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
                 </button>
               </div>
               <div style={{ marginLeft: 16 }}>
@@ -323,7 +332,7 @@ export default function App() {
               onClick={() => openFile(fullPath)}
             >
               <span style={{marginRight: 4, width: 16, height: 16, display: 'inline-block'}}>
-                <FileIcon extension={getFileExtension(name)} {...(defaultStyles[getFileExtension(name)] || {})} />
+                <img src={getFileIcon(name)} alt={getFileExtension(name) + ' file'} style={{ width: 16, height: 16, verticalAlign: 'middle' }} />
               </span>
               {name}
               <span
@@ -331,7 +340,7 @@ export default function App() {
                 style={{marginLeft:8, color:'#e57373', cursor:'pointer', fontSize:'1.1em'}} 
                 onClick={e => handleDeleteFile(fullPath, e)}
               >
-                <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h10M5 6v8a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V6m-7 0V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+              <img src={'/delete.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
               </span>
             </li>
           );
@@ -348,7 +357,7 @@ export default function App() {
           <div className="explorer-header">
             <span className="explorer-title">Files</span>
             <button className="add-btn" title="New File or Folder" onClick={handleAddFile}>+</button>
-            <button className="add-btn" title="New Folder" onClick={handleAddFolder} style={{marginLeft:4}}>&#128193;</button>
+            <button className="add-btn" title="New Folder" onClick={handleAddFolder} style={{marginLeft:4}}><img src={'/folder2.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} /></button>
           </div>
           {renderFileTree(files)}
         </div>
@@ -551,7 +560,45 @@ export default function App() {
               ▶ Run
             </button>
             <div style={{flex:1, display:'flex', flexDirection:'column', background:'#23272e'}}>
-              {isVisualPreview(currentFile, code) ? (
+              {currentFile && currentFile.endsWith('.html') ? (
+                <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+                  <div style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+                    <MonacoEditor
+                      height="100%"
+                      language="html"
+                      value={code || ''}
+                      onChange={(value) => setCode(value || '')}
+                      theme="vs-dark"
+                      options={{
+                        minimap: { enabled: false },
+                        fontSize: 14,
+                        lineHeight: 20,
+                        wordWrap: 'on',
+                        scrollBeyondLastLine: false,
+                        automaticLayout: true,
+                        tabSize: 2,
+                        insertSpaces: true,
+                        formatOnType: true,
+                        formatOnSave: true,
+                        autoClosingBrackets: 'always',
+                        autoClosingQuotes: 'always',
+                        autoClosingDoubleQuotes: 'always',
+                        autoClosingTripleQuotes: 'always',
+                        suggestOnTriggerCharacters: true,
+                        quickSuggestions: true,
+                        background: '#23272e',
+                      }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0, minHeight: 0, borderLeft: '2px solid #222', background: '#fff' }}>
+                    <iframe
+                      title="HTML Preview"
+                      srcDoc={code}
+                      style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }}
+                    />
+                  </div>
+                </div>
+              ) : isVisualPreview(currentFile, code) ? (
                 <Sandpack
                   template="react"
                   theme="dark"
