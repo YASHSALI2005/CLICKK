@@ -329,6 +329,7 @@ export default function App() {
                     onContextMenu={e => {
                       e.preventDefault();
                       setFolderMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
+                      setFileMenu({ path: null, anchor: null }); // Close file menu if open
                     }}
                   >
                     <img
@@ -395,6 +396,7 @@ export default function App() {
                   onContextMenu={e => {
                     e.preventDefault();
                     setFileMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
+                    setFolderMenu({ path: null, anchor: null }); // Close folder menu if open
                   }}
                   style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
                 >
