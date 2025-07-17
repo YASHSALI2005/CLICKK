@@ -1,9 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 
-export default function TerminalPanel() {
+const TerminalPanel = forwardRef((props, ref) => {
   const xtermRef = useRef();
   const termRef = useRef();
   const fitAddonRef = useRef();
@@ -43,6 +43,15 @@ export default function TerminalPanel() {
     };
   }, []);
 
+  // Expose writeToTerminal to parent
+  useImperativeHandle(ref, () => ({
+    writeToTerminal: (text) => {
+      if (termRef.current) {
+        termRef.current.write(text);
+      }
+    }
+  }));
+
   // Ensure fitAddon.fit() is called after mount and on resize
   useEffect(() => {
     setTimeout(() => {
@@ -53,4 +62,6 @@ export default function TerminalPanel() {
   }, []);
 
   return <div ref={xtermRef} style={{ width: '100%', height: 300, background: '#181a1b' }} />;
-}   
+});
+
+export default TerminalPanel;   

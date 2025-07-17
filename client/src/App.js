@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import MonacoEditor from '@monaco-editor/react';
 import axios from 'axios';
 import { Sandpack } from "@codesandbox/sandpack-react";
@@ -107,10 +107,30 @@ export default function App() {
   const [showMainApp, setShowMainApp] = useState(false);
   // Add a state to control terminal visibility
   const [showTerminal, setShowTerminal] = useState(false);
+  const [liveStatus, setLiveStatus] = useState({ running: false, message: '' });
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [commandSearch, setCommandSearch] = useState('');
+  const [commandIndex, setCommandIndex] = useState(0);
+  const commandInputRef = useRef(null);
+  const [showExtensionsPanel, setShowExtensionsPanel] = useState(false);
+  const [showShortcutsPanel, setShowShortcutsPanel] = useState(false);
+  const [showSnippetsPanel, setShowSnippetsPanel] = useState(false);
+  const [showThemesPanel, setShowThemesPanel] = useState(false);
+  const [openFolders, setOpenFolders] = useState({});
+  const [folderMenu, setFolderMenu] = useState({ path: null, anchor: null });
+  const [fileMenu, setFileMenu] = useState({ path: null, anchor: null });
+  // Poll live server status (optional, for robustness)
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     axios.get('http://localhost:5000/api/live-status').then(res => setLiveStatus(res.data));
+  //   }, 2000);
+  //   return () => clearInterval(interval);
+  // }, []);
 
   // Load file list
   useEffect(() => {
-    axios.get('http://localhost:5000/api/files').then(res => {
+    axios.get('/api/files').then(res => {
       console.log('Loaded files:', res.data);
       setFiles(res.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
     });
@@ -125,7 +145,7 @@ export default function App() {
 
   const saveFile = () => {
     if (!currentFile) return;
-    axios.post('http://localhost:5000/api/file', { name: currentFile, content: code });
+    axios.post('/api/file', { name: currentFile, content: code });
   };
 
   // Debounced auto-save
@@ -143,7 +163,7 @@ export default function App() {
     }
     setCurrentFile(name);
     if (!openTabs.includes(name)) setOpenTabs([...openTabs, name]);
-    axios.get('http://localhost:5000/api/file', { params: { name } })
+    axios.get('/api/file', { params: { name } })
       .then(res => setCode(res.data.content));
     setRunOutput('');
   };
@@ -152,7 +172,7 @@ export default function App() {
     e.preventDefault();
     const results = [];
     for (const file of files) {
-      const res = await axios.get('http://localhost:5000/api/file', { params: { name: file } });
+      const res = await axios.get('/api/file', { params: { name: file } });
       const content = res.data.content;
       if (content && content.toLowerCase().includes(searchQuery.toLowerCase())) {
         results.push({ file, snippet: content.substr(content.toLowerCase().indexOf(searchQuery.toLowerCase()), 60) });
@@ -161,27 +181,10 @@ export default function App() {
     setSearchResults(results);
   };
 
-  const handleRun = async () => {
-    if (!currentFile.endsWith('.js') && !currentFile.endsWith('.jsx') && !currentFile.endsWith('.py') && !currentFile.endsWith('.html')) {
-      setRunOutput('Only .js, .jsx, .py, or .html files can be run.');
-      return;
-    }
-    await saveFile();
-    setLastRunCode(code);
-    setLastRunFile(currentFile);
-    if (currentFile.endsWith('.js') || currentFile.endsWith('.jsx') || currentFile.endsWith('.py')) {
-      const res = await axios.post('http://localhost:5000/api/run', { name: currentFile });
-      console.log('Run output:', res.data.output); // Debug log
-      setRunOutput(res.data.output);
-    } else {
-      setRunOutput('');
-    }
-  };
-
   const handleDeleteFile = async (name, e) => {
     e.stopPropagation();
     if (!window.confirm(`Delete file '${name}'?`)) return;
-    await axios.delete(`http://localhost:5000/api/file?name=${encodeURIComponent(name)}`);
+    await axios.delete(`/api/file?name=${encodeURIComponent(name)}`);
     setFiles(files.filter(f => f !== name));
     setOpenTabs(openTabs.filter(f => f !== name));
     if (currentFile === name) {
@@ -205,9 +208,9 @@ export default function App() {
       alert('Invalid file name.');
       return;
     }
-    await axios.post('http://localhost:5000/api/file', { name: fullPath, content: '' });
-    axios.get('http://localhost:5000/api/files').then(res => {
-      const filtered = res.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]'));
+    await axios.post('/api/file', { name: fullPath, content: '' });
+    axios.get('/api/files').then(response => {
+      const filtered = response.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]'));
       setFiles(filtered);
       setCurrentFile(fullPath);
       setOpenTabs(tabs => tabs.includes(fullPath) ? tabs : [...tabs, fullPath]);
@@ -233,9 +236,9 @@ export default function App() {
       return;
     }
     try {
-      await axios.post('http://localhost:5000/api/file', { name: folderPath, content: '' });
-      const res = await axios.get('http://localhost:5000/api/files');
-      setFiles(res.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
+      await axios.post('/api/file', { name: folderPath, content: '' });
+      const folderRes = await axios.get('/api/files');
+      setFiles(folderRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
     } catch (error) {
       console.error('Error creating folder:', error);
       alert('Failed to create folder');
@@ -245,7 +248,7 @@ export default function App() {
   const handleDeleteFolder = async (name, e) => {
     e.stopPropagation();
     if (!window.confirm(`Delete folder '${name}' and all its contents?`)) return;
-    await axios.delete(`http://localhost:5000/api/file?name=${encodeURIComponent(name)}`);
+    await axios.delete(`/api/file?name=${encodeURIComponent(name)}`);
     setFiles(files.filter(f => !f.startsWith(name)));
     setOpenTabs(openTabs.filter(f => !f.startsWith(name)));
     if (currentFile && currentFile.startsWith(name)) {
@@ -306,68 +309,132 @@ export default function App() {
       });
     });
     // Then render the tree
-    const renderNode = (node, path = '') => (
-      <ul className="file-list" style={{ marginLeft: path ? 16 : 0 }}>
-        {Object.entries(node).map(([name, child]) => {
-          if (typeof name !== 'string') return null;
-          const fullPath = path + name;
-          const isFolder = child && typeof child === 'object' && child !== null && !Array.isArray(child);
-          return isFolder ? (
-            <li key={fullPath} style={{ fontWeight: 600, color: '#4fc3f7', marginBottom: 2 }}>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <img src={'/folder2.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
-                {name}
-                <button
-                  className="add-btn"
-                  title="Add File"
-                  style={{marginLeft: 6, fontSize: '1em', padding: '0 6px', height: 22, width: 22}}
-                  onClick={e => { e.stopPropagation(); handleAddFile(fullPath + '/'); }}
+    const renderNode = (node, path = '', isRoot = false) => {
+      let entries = Object.entries(node);
+      // No sorting, preserve original order
+      return (
+        <ul className="file-list" style={{ marginLeft: path ? 16 : 0 }}>
+          {entries.map(([name, child]) => {
+            if (typeof name !== 'string') return null;
+            const fullPath = path + name;
+            const isFolder = child && typeof child === 'object' && child !== null && !Array.isArray(child);
+            if (isFolder) {
+              const isOpen = !!openFolders[fullPath];
+              return (
+                <li key={fullPath} style={{ fontWeight: 600, color: '#4fc3f7', marginBottom: 2, position: 'relative' }}>
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+                    onClick={() => setOpenFolders(f => ({ ...f, [fullPath]: !f[fullPath] }))}
+                    onContextMenu={e => {
+                      e.preventDefault();
+                      setFolderMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
+                    }}
+                  >
+                    <img
+                      src={isOpen ? '/dowwnarrow.png' : '/righttarrow.png'}
+                      alt={isOpen ? 'Down Arrow' : 'Right Arrow'}
+                      style={{ width: 16, height: 16, marginRight: 4, userSelect: 'none', display: 'inline-block', verticalAlign: 'middle' }}
+                    />
+                    <img src={'/folder2.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block' }} />
+                    {name}
+                  </div>
+                  {/* Dropdown menu for right-click */}
+                  {folderMenu.path === fullPath && folderMenu.anchor && (
+                    <div style={{
+                      position: 'fixed',
+                      left: folderMenu.anchor.x,
+                      top: folderMenu.anchor.y,
+                      background: '#23272e',
+                      color: '#fff',
+                      borderRadius: 6,
+                      boxShadow: '0 2px 12px #0008',
+                      minWidth: 120,
+                      zIndex: 1000,
+                      border: '1px solid #222',
+                      padding: '4px 0',
+                    }}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <div
+                        style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333' }}
+                        onClick={() => {
+                          handleAddFile(fullPath + '/');
+                          setFolderMenu({ path: null, anchor: null });
+                        }}
+                      >New File</div>
+                      <div
+                        style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333' }}
+                        onClick={() => {
+                          handleAddFolder(fullPath + '/');
+                          setFolderMenu({ path: null, anchor: null });
+                        }}
+                      >New Folder</div>
+                      <div
+                        style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
+                        onClick={() => {
+                          handleDeleteFolder(fullPath + '/', { stopPropagation: () => {} });
+                          setFolderMenu({ path: null, anchor: null });
+                        }}
+                      >Delete</div>
+                    </div>
+                  )}
+                  {isOpen && (
+                    <div style={{ marginLeft: 16 }}>
+                      {renderNode(child, fullPath + '/')}
+                    </div>
+                  )}
+                </li>
+              );
+            } else {
+              return (
+                <li
+                  key={fullPath}
+                  className={`file-item${fullPath === currentFile ? ' active' : ''}`}
+                  onClick={() => openFile(fullPath)}
+                  onContextMenu={e => {
+                    e.preventDefault();
+                    setFileMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
+                  }}
+                  style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
                 >
-                  +
-                </button>
-                <button
-                  className="add-btn"
-                  title="Add Folder"
-                  style={{marginLeft: 2, fontSize: '1em', padding: '0 6px', height: 22, width: 22}}
-                  onClick={e => { e.stopPropagation(); handleAddFolder(String(fullPath) + '/'); }}
-                >
-                <img src={'/folder2.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
-                </button>
-                <span
-                  title="Delete folder"
-                  style={{marginLeft:8, color:'#e57373', cursor:'pointer', fontSize:'1.1em'}} 
-                  onClick={e => handleDeleteFolder(fullPath + '/', e)}
-                >
-                  <img src={'/delete.png'} alt="Delete Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
-                </span>
-              </div>
-              <div style={{ marginLeft: 16 }}>
-                {renderNode(child, fullPath + '/')}
-              </div>
-            </li>
-          ) : (
-            <li
-              key={fullPath}
-              className={`file-item${fullPath === currentFile ? ' active' : ''}`}
-              onClick={() => openFile(fullPath)}
-            >
-              <span style={{marginRight: 4, width: 16, height: 16, display: 'inline-block'}}>
-                <img src={getFileIcon(name)} alt={getFileExtension(name) + ' file'} style={{ width: 16, height: 16, verticalAlign: 'middle' }} />
-              </span>
-              {name}
-              <span
-                title="Delete file"
-                style={{marginLeft:8, color:'#e57373', cursor:'pointer', fontSize:'1.1em'}} 
-                onClick={e => handleDeleteFile(fullPath, e)}
-              >
-              <img src={'/delete.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} />
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    );
-    return renderNode(tree);
+                  <span style={{ marginRight: 4, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <img src={getFileIcon(name)} alt={getFileExtension(name) + ' file'} style={{ width: 16, height: 16 }} />
+                  </span>
+                  {name}
+                  {/* Dropdown menu for right-click on file */}
+                  {fileMenu.path === fullPath && fileMenu.anchor && (
+                    <div style={{
+                      position: 'fixed',
+                      left: fileMenu.anchor.x,
+                      top: fileMenu.anchor.y,
+                      background: '#23272e',
+                      color: '#fff',
+                      borderRadius: 6,
+                      boxShadow: '0 2px 12px #0008',
+                      minWidth: 120,
+                      zIndex: 1000,
+                      border: '1px solid #222',
+                      padding: '4px 0',
+                    }}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <div
+                        style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
+                        onClick={e => {
+                          handleDeleteFile(fullPath, e);
+                          setFileMenu({ path: null, anchor: null });
+                        }}
+                      >Delete</div>
+                    </div>
+                  )}
+                </li>
+              );
+            }
+          })}
+        </ul>
+      );
+    };
+    return renderNode(tree, '', true);
   };
 
   const renderSidebarPanel = () => {
@@ -377,7 +444,7 @@ export default function App() {
           <div className="explorer-header">
             <span className="explorer-title">Files</span>
             <button className="add-btn" title="New File or Folder" onClick={handleAddFile}>+</button>
-            <button className="add-btn" title="New Folder" onClick={handleAddFolder} style={{marginLeft:4}}><img src={'/folder2.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle' }} /></button>
+            <button className="add-btn" title="New Folder" onClick={handleAddFolder} style={{marginLeft:4}}><img src={'/folder2.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle', marginBottom: '-2px' }} /></button>
           </div>
           {renderFileTree(files)}
         </div>
@@ -431,15 +498,142 @@ export default function App() {
 
   const renderSettingsMenu = () => (
     <div className="settings-menu">
-      <div className="menu-item">Command Palette... <span style={{color:'#bdbdbd'}}>Ctrl+Shift+P</span></div>
+      <div className="menu-item" onClick={() => { setShowCommandPalette(true); setShowSettingsPanel(false); setShowExtensionsPanel(false); setShowShortcutsPanel(false); setShowSnippetsPanel(false); setShowThemesPanel(false); }}>Command Palette... <span style={{color:'#bdbdbd'}}>Ctrl+Shift+P</span></div>
       <div className="menu-separator"></div>
-      <div className="menu-item">Settings <span style={{color:'#bdbdbd'}}>Ctrl+,</span></div>
-      <div className="menu-item">Extensions <span style={{color:'#bdbdbd'}}>Ctrl+Shift+X</span></div>
-      <div className="menu-item">Keyboard Shortcuts <span style={{color:'#bdbdbd'}}>Ctrl+K Ctrl+S</span></div>
-      <div className="menu-item">User Snippets</div>
-      <div className="menu-item">Themes &gt;</div>
+      <div className="menu-item" onClick={() => { setShowSettingsPanel(true); setShowCommandPalette(false); setShowExtensionsPanel(false); setShowShortcutsPanel(false); setShowSnippetsPanel(false); setShowThemesPanel(false); }}>Settings <span style={{color:'#bdbdbd'}}>Ctrl+,</span></div>
+      <div className="menu-item" onClick={() => { setShowExtensionsPanel(true); setShowSettingsPanel(false); setShowCommandPalette(false); setShowShortcutsPanel(false); setShowSnippetsPanel(false); setShowThemesPanel(false); }}>Extensions <span style={{color:'#bdbdbd'}}>Ctrl+Shift+X</span></div>
+      <div className="menu-item" onClick={() => { setShowShortcutsPanel(true); setShowSettingsPanel(false); setShowCommandPalette(false); setShowExtensionsPanel(false); setShowSnippetsPanel(false); setShowThemesPanel(false); }}>Keyboard Shortcuts <span style={{color:'#bdbdbd'}}>Ctrl+K Ctrl+S</span></div>
+      <div className="menu-item" onClick={() => { setShowSnippetsPanel(true); setShowSettingsPanel(false); setShowCommandPalette(false); setShowExtensionsPanel(false); setShowShortcutsPanel(false); setShowThemesPanel(false); }}>User Snippets</div>
+      <div className="menu-item" onClick={() => { setShowThemesPanel(true); setShowSettingsPanel(false); setShowCommandPalette(false); setShowExtensionsPanel(false); setShowShortcutsPanel(false); setShowSnippetsPanel(false); }}>Themes &gt;</div>
     </div>
   );
+
+  // Handler functions must be defined before commands array
+  const handleGoLive = async () => {
+    await saveFile();
+    const res = await axios.post('/api/go-live');
+    setLiveStatus(res.data);
+    if (currentFile && currentFile.endsWith('.html')) {
+      window.open(`http://localhost:5500/${currentFile}`, '_blank');
+    } else {
+      window.open('http://localhost:5500/', '_blank');
+    }
+  };
+
+  const handleStopLive = async () => {
+    const res = await axios.post('/api/stop-live');
+    setLiveStatus(res.data);
+  };
+
+  const terminalRef = useRef(null);
+
+  // Restore original Run button logic
+  const handleRun = async () => {
+    if (!currentFile.endsWith('.js') && !currentFile.endsWith('.jsx') && !currentFile.endsWith('.py') && !currentFile.endsWith('.html')) {
+      setRunOutput('Only .js, .jsx, .py, or .html files can be run.');
+      return;
+    }
+    await saveFile();
+    setLastRunCode(code);
+    setLastRunFile(currentFile);
+    if (currentFile.endsWith('.js') || currentFile.endsWith('.jsx') || currentFile.endsWith('.py')) {
+      const res = await axios.post('/api/run', { name: currentFile });
+      setRunOutput(res.data.output);
+    } else {
+      setRunOutput('');
+    }
+  };
+
+  // Command palette: run file in terminal for .js only
+  const runFileInTerminal = async () => {
+    if (!currentFile.endsWith('.js')) {
+      if (!showTerminal) setShowTerminal(true);
+      setTimeout(() => {
+        if (terminalRef.current) terminalRef.current.writeToTerminal('Only .js files can be run in terminal via command palette.\r\n');
+      }, 200);
+      return;
+    }
+    await saveFile();
+    if (!showTerminal) setShowTerminal(true);
+    const res = await axios.post('/api/run', { name: currentFile });
+    // Wait a bit to ensure terminal is mounted
+    setTimeout(() => {
+      if (terminalRef.current) terminalRef.current.writeToTerminal((res.data.output || '') + '\r\n');
+    }, 200);
+  };
+
+  // List of available commands (now after handlers)
+  const commands = [
+    { id: 'open-settings', label: 'Open Settings', action: () => setShowSettingsPanel(true) },
+    { id: 'go-live', label: 'Go Live', action: handleGoLive },
+    { id: 'stop-live', label: 'Stop Live', action: handleStopLive },
+    { id: 'run-file', label: 'Run Current File', action: runFileInTerminal },
+    { id: 'open-terminal', label: 'Open Terminal', action: () => setShowTerminal(true) },
+    { id: 'close-terminal', label: 'Close Terminal', action: () => setShowTerminal(false) },
+    { id: 'open-extensions', label: 'Open Extensions', action: () => setShowExtensionsPanel(true) },
+    { id: 'open-keyboard-shortcuts', label: 'Open Keyboard Shortcuts', action: () => setShowShortcutsPanel(true) },
+    { id: 'open-snippets', label: 'Open User Snippets', action: () => setShowSnippetsPanel(true) },
+    { id: 'open-themes', label: 'Open Themes', action: () => setShowThemesPanel(true) },
+    { id: 'focus-explorer', label: 'Focus File Explorer', action: () => setActiveSidebar('explorer') },
+    { id: 'focus-search', label: 'Focus Search', action: () => setActiveSidebar('search') },
+    { id: 'focus-source', label: 'Focus Source Control', action: () => setActiveSidebar('source') },
+    // Add more commands as needed
+  ];
+
+  // Fuzzy filter commands
+  const filteredCommands = commands.filter(cmd =>
+    cmd.label.toLowerCase().includes(commandSearch.toLowerCase())
+  );
+
+  // Keyboard navigation for command palette
+  useEffect(() => {
+    if (!showCommandPalette) return;
+    const paletteHandler = (e) => {
+      if (e.key === 'ArrowDown') {
+        setCommandIndex(i => Math.min(i + 1, filteredCommands.length - 1));
+        e.preventDefault();
+      } else if (e.key === 'ArrowUp') {
+        setCommandIndex(i => Math.max(i - 1, 0));
+        e.preventDefault();
+      } else if (e.key === 'Enter') {
+        if (filteredCommands[commandIndex]) {
+          filteredCommands[commandIndex].action();
+          setShowCommandPalette(false);
+          setCommandSearch('');
+          setCommandIndex(0);
+        }
+        e.preventDefault();
+      } else if (e.key === 'Escape') {
+        setShowCommandPalette(false);
+        setCommandSearch('');
+        setCommandIndex(0);
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', paletteHandler);
+    return () => window.removeEventListener('keydown', paletteHandler);
+  }, [showCommandPalette, filteredCommands, commandIndex]);
+
+  // Focus input when palette opens
+  useEffect(() => {
+    if (showCommandPalette && commandInputRef.current) {
+      commandInputRef.current.focus();
+    }
+  }, [showCommandPalette]);
+
+  // Open palette with Ctrl+Shift+P
+  useEffect(() => {
+    const globalPaletteHandler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
+        setShowCommandPalette(true);
+        setCommandSearch('');
+        setCommandIndex(0);
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', globalPaletteHandler);
+    return () => window.removeEventListener('keydown', globalPaletteHandler);
+  }, []);
 
   useEffect(() => {
     if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
@@ -485,6 +679,27 @@ export default function App() {
     }
   };
 
+  // Close folder menu on click outside
+  useEffect(() => {
+    const closeMenu = () => setFolderMenu({ path: null, anchor: null });
+    if (folderMenu.path) {
+      window.addEventListener('click', closeMenu);
+      return () => window.removeEventListener('click', closeMenu);
+    }
+  }, [folderMenu]);
+
+  // Close file menu on click outside
+  useEffect(() => {
+    const closeMenu = () => setFileMenu({ path: null, anchor: null });
+    if (fileMenu.path) {
+      window.addEventListener('click', closeMenu);
+      return () => window.removeEventListener('click', closeMenu);
+    }
+  }, [fileMenu]);
+
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [explorerOpen, setExplorerOpen] = useState(true);
+
   if (!showMainApp) {
     return <LandingPage onInstall={handleInstallClick} showInstallButton={showInstallButton} />;
   }
@@ -513,32 +728,44 @@ export default function App() {
               className={`sidebar-icon${activeSidebar === icon.key ? ' active' : ''}`}
               title={icon.title}
               onClick={() => {
+                if (icon.key === 'explorer') {
+                  if (activeSidebar === 'explorer' && explorerOpen) {
+                    setExplorerOpen(false);
+                    return;
+                  } else {
+                    setExplorerOpen(true);
+                  }
+                } else {
+                  setExplorerOpen(true);
+                }
                 setActiveSidebar(icon.key);
                 setShowSettings(false);
-                // If the user clicks a terminal icon, show the terminal
                 if (icon.key === 'terminal') setShowTerminal(true);
               }}
             >
               {icon.svg}
             </div>
           ))}
-          <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 12 }}>
-            <img src="/icon.png" alt="User" style={{ width: 32, height: 32, borderRadius: 8, marginBottom: 8, border: '1.5px solid #333', background: '#23272e' }} />
-            <div
-              className={`sidebar-icon${activeSidebar === 'settings' ? ' active' : ''}`}
-              title="Settings"
-              onClick={() => {
-                setActiveSidebar('settings');
-                setShowSettings(s => !s);
-              }}
-            >
-              {SIDEBAR_ICONS.find(icon => icon.key === 'settings').svg}
+            {/* Move settings icon up for visibility */}
+            <div style={{ flex: 1 }} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 40 }}>
+              <div
+                className={`sidebar-icon${activeSidebar === 'settings' ? ' active' : ''}`}
+                title="Settings"
+                onClick={() => {
+                  setActiveSidebar('settings');
+                  setShowSettings(s => !s);
+                }}
+              >
+                {SIDEBAR_ICONS.find(icon => icon.key === 'settings').svg}
+              </div>
+              <img src="/icon.png" alt="User" style={{ width: 32, height: 32, borderRadius: 8, marginTop: 16, border: '1.5px solid #333', background: '#23272e' }} />
             </div>
+            {showSettings && renderSettingsMenu()}
           </div>
-          {showSettings && renderSettingsMenu()}
-        </div>
-        {renderSidebarPanel()}
+        {/* Only show explorer panel if explorerOpen and activeSidebar is explorer */}
+        {activeSidebar === 'explorer' && explorerOpen && renderSidebarPanel()}
+        {activeSidebar !== 'explorer' && renderSidebarPanel()}
         <div className="editor-preview-container" style={{flex:1, display:'flex', flexDirection:'column', background:'#23272e'}}>
           <div className="editor-area" style={{flex:1, background:'#23272e', display:'flex', flexDirection:'column'}}>
             <div className="tabbar">
@@ -547,10 +774,15 @@ export default function App() {
                   key={f}
                   className={`tab${f === currentFile ? ' active' : ''}`}
                   onClick={() => openFile(f)}
+                  style={{ display: 'flex', alignItems: 'center' }}
                 >
-                 <span style={{marginRight: 4, width: 14, height: 14, display: 'inline-block'}}>
-  <FileIcon extension={getFileExtension(f)} {...(defaultStyles[getFileExtension(f)] || {})} />
-</span>
+                 <span style={{ marginRight: 4, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                   {f.endsWith('/') ? (
+                     <img src="/folder2.png" alt="Folder" style={{ width: 16, height: 16 }} />
+                   ) : (
+                     <img src={getFileIcon(f)} alt={getFileExtension(f) + ' file'} style={{ width: 16, height: 16 }} />
+                   )}
+                 </span>
                   {f}
                   <span
                     className="close"
@@ -610,13 +842,7 @@ export default function App() {
                       }}
                     />
                   </div>
-                  <div style={{ flex: 1, minWidth: 0, minHeight: 0, borderLeft: '2px solid #222', background: '#fff' }}>
-                    <iframe
-                      title="HTML Preview"
-                      srcDoc={code}
-                      style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }}
-                    />
-                  </div>
+                  {/* Removed Sandpack and iframe preview for HTML files */}
                 </div>
               ) : isVisualPreview(currentFile, code) ? (
                 <Sandpack
@@ -682,11 +908,199 @@ export default function App() {
           {/* Terminal always at the bottom */}
           {showTerminal && (
             <div style={{height:'200px', background:'#181a1b', borderTop:'1px solid #333', color:'#fff'}}>
-              <TerminalPanel output={runOutput} onRun={handleRun} />
+              <TerminalPanel ref={terminalRef} />
             </div>
           )}
         </div>
       </div>
+      {/* Bottom status bar with Go Live/Stop Live */}
+      <div style={{
+        position: 'fixed',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: 36,
+        background: '#23272e',
+        color: '#fff',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        padding: '0 24px',
+        borderTop: '1px solid #333',
+        zIndex: 1001
+      }}>
+        <span style={{marginRight: 16, color: liveStatus.running ? '#4fc3f7' : '#aaa'}}>
+          {liveStatus.running ? 'Port : 5500 (Live)' : 'Go Live stopped'}
+        </span>
+        <button
+          onClick={handleGoLive}
+          disabled={liveStatus.running}
+          style={{
+            marginRight: 8,
+            background: liveStatus.running ? '#444' : '#4fc3f7',
+            color: '#181a1b',
+            border: 'none',
+            borderRadius: 4,
+            padding: '6px 18px',
+            fontWeight: 600,
+            fontSize: '1rem',
+            cursor: liveStatus.running ? 'not-allowed' : 'pointer',
+            opacity: liveStatus.running ? 0.6 : 1
+          }}
+        >
+          Go Live
+        </button>
+        <button
+          onClick={handleStopLive}
+          disabled={!liveStatus.running}
+          style={{
+            background: !liveStatus.running ? '#444' : '#e57373',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 4,
+            padding: '6px 18px',
+            fontWeight: 600,
+            fontSize: '1rem',
+            cursor: !liveStatus.running ? 'not-allowed' : 'pointer',
+            opacity: !liveStatus.running ? 0.6 : 1
+          }}
+        >
+          Stop Live
+        </button>
+      </div>
+      {/* Settings Panel Modal */}
+      {showSettingsPanel && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(0,0,0,0.45)',
+          zIndex: 2000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+          onClick={() => setShowSettingsPanel(false)}
+        >
+          <div style={{
+            background: '#23272e',
+            color: '#fff',
+            borderRadius: 10,
+            minWidth: 340,
+            minHeight: 220,
+            padding: 32,
+            boxShadow: '0 4px 32px #0008',
+            position: 'relative',
+          }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h2 style={{marginTop:0, marginBottom:16}}>Settings</h2>
+            <div style={{marginBottom:16}}>
+              <label style={{fontWeight:600}}>Theme:</label>
+              <select style={{marginLeft:12, padding:4, borderRadius:4, background:'#181a1b', color:'#fff', border:'1px solid #333'}} disabled>
+                <option>Dark (default)</option>
+                <option>Light</option>
+              </select>
+              <span style={{marginLeft:8, color:'#888', fontSize:'0.95em'}}>(coming soon)</span>
+            </div>
+            <div style={{marginBottom:16}}>
+              <label style={{fontWeight:600}}>Font Size:</label>
+              <input type="number" min="10" max="32" value={14} style={{marginLeft:12, width:48, padding:4, borderRadius:4, background:'#181a1b', color:'#fff', border:'1px solid #333'}} disabled />
+              <span style={{marginLeft:8, color:'#888', fontSize:'0.95em'}}>(coming soon)</span>
+            </div>
+            <button onClick={() => setShowSettingsPanel(false)} style={{position:'absolute', top:12, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
+          </div>
+        </div>
+      )}
+      {/* Command Palette Modal (fully functional) */}
+      {showCommandPalette && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.45)', zIndex: 2000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+        }} onClick={() => setShowCommandPalette(false)}>
+          <div style={{ background: '#23272e', color: '#fff', borderRadius: 10, minWidth: 440, minHeight: 60, marginTop: 80, padding: 0, boxShadow: '0 4px 32px #0008', position: 'relative', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            <input
+              ref={commandInputRef}
+              type="text"
+              placeholder="Type a command..."
+              value={commandSearch}
+              onChange={e => { setCommandSearch(e.target.value); setCommandIndex(0); }}
+              style={{width:'100%',padding:16,border:'none',outline:'none',background:'#181a1b',color:'#fff',fontSize:'1.15rem',boxSizing:'border-box'}}
+            />
+            <div style={{maxHeight: 320, overflowY: 'auto'}}>
+              {filteredCommands.length === 0 && (
+                <div style={{padding: '18px 24px', color:'#888'}}>No matching commands</div>
+              )}
+              {filteredCommands.map((cmd, i) => (
+                <div
+                  key={cmd.id}
+                  style={{
+                    padding: '14px 24px',
+                    background: i === commandIndex ? '#333' : 'none',
+                    color: i === commandIndex ? '#4fc3f7' : '#fff',
+                    fontWeight: i === commandIndex ? 600 : 400,
+                    cursor: 'pointer',
+                    fontSize: '1.08rem',
+                    borderBottom: '1px solid #222',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={() => setCommandIndex(i)}
+                  onClick={() => {
+                    cmd.action();
+                    setShowCommandPalette(false);
+                    setCommandSearch('');
+                    setCommandIndex(0);
+                  }}
+                >
+                  {cmd.label}
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setShowCommandPalette(false)} style={{position:'absolute', top:10, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
+          </div>
+        </div>
+      )}
+      {/* Extensions Modal */}
+      {showExtensionsPanel && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.45)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', }} onClick={() => setShowExtensionsPanel(false)}>
+          <div style={{ background: '#23272e', color: '#fff', borderRadius: 10, minWidth: 400, minHeight: 120, padding: 32, boxShadow: '0 4px 32px #0008', position: 'relative' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{marginTop:0, marginBottom:16}}>Extensions</h2>
+            <div style={{color:'#888'}}>Extensions management coming soon!</div>
+            <button onClick={() => setShowExtensionsPanel(false)} style={{position:'absolute', top:12, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
+          </div>
+        </div>
+      )}
+      {/* Keyboard Shortcuts Modal */}
+      {showShortcutsPanel && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.45)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', }} onClick={() => setShowShortcutsPanel(false)}>
+          <div style={{ background: '#23272e', color: '#fff', borderRadius: 10, minWidth: 400, minHeight: 120, padding: 32, boxShadow: '0 4px 32px #0008', position: 'relative' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{marginTop:0, marginBottom:16}}>Keyboard Shortcuts</h2>
+            <div style={{color:'#888'}}>Shortcuts list coming soon!</div>
+            <button onClick={() => setShowShortcutsPanel(false)} style={{position:'absolute', top:12, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
+          </div>
+        </div>
+      )}
+      {/* User Snippets Modal */}
+      {showSnippetsPanel && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.45)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', }} onClick={() => setShowSnippetsPanel(false)}>
+          <div style={{ background: '#23272e', color: '#fff', borderRadius: 10, minWidth: 400, minHeight: 120, padding: 32, boxShadow: '0 4px 32px #0008', position: 'relative' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{marginTop:0, marginBottom:16}}>User Snippets</h2>
+            <div style={{color:'#888'}}>Snippets management coming soon!</div>
+            <button onClick={() => setShowSnippetsPanel(false)} style={{position:'absolute', top:12, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
+          </div>
+        </div>
+      )}
+      {/* Themes Modal */}
+      {showThemesPanel && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.45)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', }} onClick={() => setShowThemesPanel(false)}>
+          <div style={{ background: '#23272e', color: '#fff', borderRadius: 10, minWidth: 400, minHeight: 120, padding: 32, boxShadow: '0 4px 32px #0008', position: 'relative' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{marginTop:0, marginBottom:16}}>Themes</h2>
+            <div style={{color:'#888'}}>Theme selection coming soon!</div>
+            <button onClick={() => setShowThemesPanel(false)} style={{position:'absolute', top:12, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

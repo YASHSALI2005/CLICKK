@@ -18,6 +18,7 @@ const path = require('path');
 const { exec } = require('child_process');
 const WebSocket = require('ws');
 const pty = require('node-pty');
+const find = require('find-process');
 require('dotenv').config();
 
 // Set your project root (where files are stored)
@@ -159,20 +160,60 @@ if (!fs.existsSync(PROJECT_ROOT)) {
   fs.writeFileSync(path.join(PROJECT_ROOT, 'hello.js'), "console.log('Hello, world!');");
 }
 
+let liveServerProcess = null;
+
+// Start Go Live server
+app.post('/api/go-live', async (req, res) => {
+  if (liveServerProcess) {
+    return res.status(200).json({ running: true, message: 'Live server already running.' });
+  }
+  // Kill any process using port 5500
+  try {
+    const list = await find('port', 5500);
+    for (const proc of list) {
+      try {
+        process.kill(proc.pid);
+      } catch (e) {
+        console.warn('Could not kill process on port 5500:', e);
+      }
+    }
+  } catch (e) {
+    console.warn('Error finding/killing process on port 5500:', e);
+  }
+  const httpServerPath = require.resolve('http-server/bin/http-server');
+  liveServerProcess = exec(
+    `node "${httpServerPath}" . -p 5500`,
+    { cwd: PROJECT_ROOT },
+    (err, stdout, stderr) => {
+      if (err) {
+        console.error('http-server error:', err);
+      }
+      liveServerProcess = null;
+    }
+  );
+  return res.status(200).json({ running: true, message: 'HTTP server started.' });
+});
+
+// Stop Go Live server
+app.post('/api/stop-live', (req, res) => {
+  if (liveServerProcess) {
+    liveServerProcess.kill();
+    liveServerProcess = null;
+    return res.status(200).json({ running: false, message: 'Live server stopped.' });
+  }
+  return res.status(200).json({ running: false, message: 'Live server was not running.' });
+});
+
 const wss = new WebSocket.Server({ port: 8081 });
 
 wss.on('connection', function connection(ws) {
-  // Create a unique temp dir for this session
-  const sessionId = Date.now() + '-' + Math.random().toString(36).slice(2);
-  const tempDir = path.join(__dirname, 'temp', 'terminal-' + sessionId);
-  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
   // Use cmd.exe on Windows, bash otherwise
   const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
   const ptyProcess = pty.spawn(shell, [], {
     name: 'xterm-color',
     cols: 80,
     rows: 30,
-    cwd: tempDir,
+    cwd: PROJECT_ROOT, // Start terminal in the project root
     env: process.env,
   });
 
@@ -193,12 +234,7 @@ wss.on('connection', function connection(ws) {
 
   ws.on('close', () => {
     ptyProcess.kill();
-    // Clean up tempDir
-    try {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    } catch (err) {
-      console.error('Error cleaning up tempDir:', err);
-    }
+    // No tempDir to clean up
   });
 });
 
