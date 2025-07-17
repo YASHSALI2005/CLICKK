@@ -1,0 +1,131 @@
+/* .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 40px;
+    padding: 0 16px;
+    background-color: #1e1e1e;
+    color: white;
+    font-family: 'Segoe UI', sans-serif;
+    position: relative;
+  }
+  
+  .topbar-left {
+    display: flex;
+    align-items: center;
+  }
+  
+  .topbar-logo {
+    height: 22px;
+    object-fit: contain;
+  }
+  
+  .topbar-menu {
+    display: flex;
+    gap: 16px;
+  }
+  
+  .topbar-item-wrapper {
+    position: relative;
+  }
+  
+  .topbar-item {
+    cursor: pointer;
+    font-size: 0.95rem;
+    padding: 4px 6px;
+    border-radius: 4px;
+  }
+  
+  .topbar-item:hover {
+    background-color: #2a2a2a;
+  } */
+  
+/* Topbar.css */
+.topbar {
+    display: flex;
+    align-items: center;
+    background-color: #1e1e1e;
+    color: white;
+    padding: 4px 10px;
+  }
+  
+  .topbar-logo {
+    height: 24px;
+    margin-right: 20px;
+  }
+  
+  .topbar-menu {
+    display: flex;
+    gap: 16px;
+  }
+  
+  .topbar-item {
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+  
+  .topbar-item:hover {
+    background-color: #333;
+    border-radius: 4px;
+  }
+  
+
+
+
+
+  /* Dropdown Styles */
+  .dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background-color: #252526;
+    color: #ccc;
+    min-width: 260px;
+    border: 1px solid #333;
+    z-index: 999;
+    padding: 4px 0;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  }
+  
+  .dropdown-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  
+  .dropdown-item:hover {
+    background-color: #094771;
+    color: white;
+  }
+  
+  .dropdown-divider {
+    height: 1px;
+    background-color: #444;
+    margin: 4px 0;
+  }
+  
+  .shortcut {
+    color: #999;
+    font-size: 0.85rem;
+  }
+  
+  .checkmark {
+    margin-right: 6px;
+    color: #ccc;
+  }
+  
+  .right-section {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  
+  .submenu-arrow {
+    font-size: 0.8rem;
+    color: #999;
+  }
+  

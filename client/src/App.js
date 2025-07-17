@@ -6,6 +6,7 @@ import './layout.css';
 import TerminalPanel from './TerminalPanel';
 import LandingPage from './LandingPage';
 import { FileIcon, defaultStyles } from 'react-file-icon';
+import Topbar from './components/Topbar';
 
 const SIDEBAR_ICONS = [
   {
@@ -699,7 +700,143 @@ export default function App() {
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [explorerOpen, setExplorerOpen] = useState(true);
+  // Add missing state for terminals and activeTerminal
+  const [terminals, setTerminals] = useState([]);
+  const [activeTerminal, setActiveTerminal] = useState(null);
 
+  // Ensure all referenced functions exist (no-op if already defined)
+  // handleAddFile, saveFile, closeTab, handleRun are already defined above
+
+  const handleMenuAction = (section, item) => {
+    const label = item.label;
+  
+    switch (section) {
+      case 'File':
+        switch (true) {
+          case label.startsWith('New Text File'):
+            handleAddFile();
+            break;
+          case label.startsWith('New Window'):
+            const url = window.location.origin + window.location.pathname + '?blank=1';
+            window.open(url, '_blank');
+            break;
+          case label.startsWith('Open File'):
+            alert('Open File dialog not implemented yet.');
+            break;
+          case label.startsWith('Open Folder'):
+            alert('Open Folder dialog not implemented yet.');
+            break;
+          case label.startsWith('Save'):
+            saveFile();
+            break;
+          case label.startsWith('Close Editor'):
+            if (currentFile) closeTab(currentFile, { stopPropagation: () => {} });
+            break;
+          case label.startsWith('Exit'):
+            window.close();
+            break;
+          default:
+            alert(`Action for 'File > ${label}' not implemented yet.`);
+        }
+        return;
+  
+      case 'Edit':
+        switch (label) {
+          case 'Undo':
+            document.execCommand('undo');
+            break;
+          case 'Redo':
+            document.execCommand('redo');
+            break;
+          case 'Cut':
+            document.execCommand('cut');
+            break;
+          case 'Copy':
+            document.execCommand('copy');
+            break;
+          case 'Paste':
+            document.execCommand('paste');
+            break;
+          default:
+            alert(`Action for 'Edit > ${label}' not implemented yet.`);
+        }
+        return;
+  
+      case 'Selection':
+        if (label === 'Select All') {
+          document.execCommand('selectAll');
+        } else {
+          alert(`Action for 'Selection > ${label}' not implemented yet.`);
+        }
+        return;
+  
+      case 'Components':
+        switch (label) {
+          case 'Add Component':
+          case 'Remove Component':
+          case 'Rename Component':
+          case 'Component Settings':
+          case 'Show Component Tree':
+          case 'Export Component':
+            alert(`${label} action triggered!`);
+            break;
+          default:
+            alert(`Action for 'Components > ${label}' not implemented yet.`);
+        }
+        return;
+  
+      case 'Help':
+        switch (label) {
+          case 'Welcome':
+            alert('Welcome to the app!');
+            break;
+          case 'Show All Commands':
+            alert('Show All Commands dialog not implemented yet.');
+            break;
+          case 'About':
+            alert('About: This is the CLICKK editor.');
+            break;
+          default:
+            alert(`Action for 'Help > ${label}' not implemented yet.`);
+        }
+        return;
+  
+      case 'Terminal':
+        switch (label) {
+          case 'New Terminal':
+            setTerminals(prev => {
+              const newId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 1;
+              setActiveTerminal(newId);
+              return [...prev, { id: newId }];
+            });
+            break;
+          case 'Split Terminal':
+          case 'Run Task':
+          case 'Run Build Task':
+          case 'Restart Task':
+          case 'Terminate Task':
+          case 'Configure Tasks':
+          case 'Configure Default Build Task':
+          case 'Show Running Tasks':
+          case 'Toggle Output':
+            alert(`${label} not implemented yet.`);
+            break;
+          case 'Run Active File':
+            handleRun();
+            break;
+          case 'Toggle Terminal':
+            setShowTerminal(s => !s);
+            break;
+          default:
+            alert(`Action for 'Terminal > ${label}' not implemented yet.`);
+        }
+        return;
+  
+      default:
+        alert(`Action for '${section} > ${label}' not implemented yet.`);
+    }
+  };
+  
   if (!showMainApp) {
     return <LandingPage onInstall={handleInstallClick} showInstallButton={showInstallButton} />;
   }
@@ -717,8 +854,8 @@ export default function App() {
         </div>
       )}
       <div className="topbar">
-        <span style={{fontWeight:600, fontSize:'1.15rem'}}>CLIKK</span>
-        <span style={{color:'#4fc3f7', fontWeight:400, fontSize:'1rem', marginLeft:12}}>&bull; Demo Project</span>
+        
+        <Topbar onMenuAction={handleMenuAction} />
       </div>
       <div className="main-content" style={{display:'flex', height:'calc(100vh - 48px)'}}>
         <div className="sidebar">
