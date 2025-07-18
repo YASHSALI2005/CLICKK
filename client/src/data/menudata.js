@@ -1,35 +1,35 @@
 // client/src/data/menudata.js
 
-export const menudata = {
-    File: [
-      { label: 'New File', shortcut: 'Ctrl+N' },
-      { label: 'New Window', shortcut: 'Ctrl+Shift+N' },
-      { label: 'New Window with Profile ▶' },
-      'divider',
-      { label: 'Open File...', shortcut: 'Ctrl+O' },
-      { label: 'Open Folder...', shortcut: 'Ctrl+M Ctrl+O' },
-      { label: 'Open Workspace from File...' },
-      { label: 'Open Recent ▶' },
-      'divider',
-      { label: 'Add Folder to Workspace...' },
-      { label: 'Save Workspace As...' },
-      { label: 'Duplicate Workspace' },
-      'divider',
-      { label: 'Save', shortcut: 'Ctrl+S' },
-      { label: 'Save As...', shortcut: 'Ctrl+Shift+S' },
-      { label: 'Save All', shortcut: 'Ctrl+M S' },
-      'divider',
-      { label: 'Share ▶' },
-      { label: 'Auto Save ✔' },
-      { label: 'Preferences ▶' },
-      'divider',
-      { label: 'Revert File' },
-      { label: 'Close Editor', shortcut: 'Ctrl+F4' },
-      { label: 'Close Folder', shortcut: 'Ctrl+M F' },
-      { label: 'Close Window', shortcut: 'Alt+F4' },
-      'divider',
-      { label: 'Exit' }
-    ],
+export const getMenuData = (autoSave = true) => ({
+  File: [
+    { label: 'New File', shortcut: 'Ctrl+N' },
+    { label: 'New Window', shortcut: 'Ctrl+Shift+N' },
+    { label: 'New Window with Profile ▶' },
+    'divider',
+    { label: 'Open File...', shortcut: 'Ctrl+O' },
+    { label: 'Open Folder...', shortcut: 'Ctrl+M Ctrl+O' },
+    { label: 'Open Workspace from File...' },
+    { label: 'Open Recent ▶' },
+    'divider',
+    { label: 'Add Folder to Workspace...' },
+    { label: 'Save Workspace As...' },
+    { label: 'Duplicate Workspace' },
+    'divider',
+    { label: 'Save', shortcut: 'Ctrl+S' },
+    { label: 'Save As...', shortcut: 'Ctrl+Shift+S' },
+    { label: 'Save All', shortcut: 'Ctrl+M S' },
+    'divider',
+    { label: 'Share ▶' },
+    { label: `Auto Save${autoSave ? ' ✔' : ''}` },
+    { label: 'Preferences ▶' },
+    'divider',
+    { label: 'Revert File' },
+    { label: 'Close Editor', shortcut: 'Ctrl+F4' },
+    { label: 'Close Folder', shortcut: 'Ctrl+M F' },
+    { label: 'Close Window', shortcut: 'Alt+F4' },
+    'divider',
+    { label: 'Exit' }
+  ],
   
     Edit: [
       { label: 'Undo', shortcut: 'Ctrl+Z' },
@@ -148,5 +148,5 @@ export const menudata = {
       { label: 'Show Component Tree' },
       { label: 'Export Component' }
     ]
-  };
+  });
   

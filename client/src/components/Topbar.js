@@ -6,7 +6,7 @@ import DropdownMenu from './DropdownMenu';
 
 const menuItems = ['File', 'Edit', 'Selection', 'Components', 'View', 'Go', 'Run', 'Terminal', 'Help'];
 
-const Topbar = ({ onMenuAction }) => {
+const Topbar = ({ onMenuAction, autoSave }) => {
   const [activeMenu, setActiveMenu] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ left: 0 });
   const menuRef = useRef(null);
@@ -56,7 +56,7 @@ const Topbar = ({ onMenuAction }) => {
           </span>
         ))}
       </div>
-      {activeMenu && <DropdownMenu section={activeMenu} position={dropdownPosition} onMenuAction={onMenuAction} />}
+      {activeMenu && <DropdownMenu section={activeMenu} position={dropdownPosition} onMenuAction={onMenuAction} autoSave={autoSave} />}
     </div>
   );
 };

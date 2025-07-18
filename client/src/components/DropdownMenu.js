@@ -1,10 +1,10 @@
 // client/src/components/DropdownMenu.js
 import React from 'react';
 import './DropdownMenu.css';
-import { menudata } from '../data/menudata';
+import { getMenuData } from '../data/menudata';
 
-const DropdownMenu = ({ section, position, onMenuAction }) => {
-  const items = menudata[section];
+const DropdownMenu = ({ section, position, onMenuAction, autoSave }) => {
+  const items = getMenuData(autoSave)[section];
 
   if (!items) return null;
 

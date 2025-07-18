@@ -92,6 +92,7 @@ const getFileIcon = (filename) => {
 };
 
 export default function App() {
+  const [workspace, setWorkspace] = useState('demo');
   const [files, setFiles] = useState([]);
   const [currentFile, setCurrentFile] = useState('');
   const [code, setCode] = useState('');
@@ -105,7 +106,10 @@ export default function App() {
   const [lastRunFile, setLastRunFile] = useState('');
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallButton, setShowInstallButton] = useState(false);
-  const [showMainApp, setShowMainApp] = useState(false);
+  const [showMainApp, setShowMainApp] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return !!params.get('workspace');
+  });
   // Add a state to control terminal visibility
   const [showTerminal, setShowTerminal] = useState(false);
   const [liveStatus, setLiveStatus] = useState({ running: false, message: '' });
@@ -121,6 +125,13 @@ export default function App() {
   const [openFolders, setOpenFolders] = useState({});
   const [folderMenu, setFolderMenu] = useState({ path: null, anchor: null });
   const [fileMenu, setFileMenu] = useState({ path: null, anchor: null });
+  const [recentFiles, setRecentFiles] = useState([]);
+  const [showPreferences, setShowPreferences] = useState(false);
+  const [notification, setNotification] = useState('');
+  const showNotification = (msg) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(''), 2000);
+  };
   // Poll live server status (optional, for robustness)
   // useEffect(() => {
   //   const interval = setInterval(() => {
@@ -131,11 +142,11 @@ export default function App() {
 
   // Load file list
   useEffect(() => {
-    axios.get('/api/files').then(res => {
-      console.log('Loaded files:', res.data);
-      setFiles(res.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
+    axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
+      console.log('Loaded files:', fileRes.data);
+      setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
     });
-  }, []);
+  }, [workspace]);
 
   // Auto-open first file
   useEffect(() => {
@@ -146,7 +157,7 @@ export default function App() {
 
   const saveFile = () => {
     if (!currentFile) return;
-    axios.post('/api/file', { name: currentFile, content: code });
+    axios.post(`/api/file?workspace=${workspace}`, { name: currentFile, content: code });
   };
 
   // Debounced auto-save
@@ -164,17 +175,18 @@ export default function App() {
     }
     setCurrentFile(name);
     if (!openTabs.includes(name)) setOpenTabs([...openTabs, name]);
-    axios.get('/api/file', { params: { name } })
-      .then(res => setCode(res.data.content));
+    axios.get(`/api/file?workspace=${workspace}&name=${encodeURIComponent(name)}`)
+      .then(fileRes => setCode(fileRes.data.content));
     setRunOutput('');
+    setRecentFiles(prev => [name, ...prev.filter(f => f !== name)].slice(0, 10));
   };
 
   const handleSearch = async (e) => {
     e.preventDefault();
     const results = [];
     for (const file of files) {
-      const res = await axios.get('/api/file', { params: { name: file } });
-      const content = res.data.content;
+      const fileRes = await axios.get(`/api/file?workspace=${workspace}&name=${encodeURIComponent(file)}`);
+      const content = fileRes.data.content;
       if (content && content.toLowerCase().includes(searchQuery.toLowerCase())) {
         results.push({ file, snippet: content.substr(content.toLowerCase().indexOf(searchQuery.toLowerCase()), 60) });
       }
@@ -185,7 +197,7 @@ export default function App() {
   const handleDeleteFile = async (name, e) => {
     e.stopPropagation();
     if (!window.confirm(`Delete file '${name}'?`)) return;
-    await axios.delete(`/api/file?name=${encodeURIComponent(name)}`);
+    await axios.delete(`/api/file?workspace=${workspace}&name=${encodeURIComponent(name)}`);
     setFiles(files.filter(f => f !== name));
     setOpenTabs(openTabs.filter(f => f !== name));
     if (currentFile === name) {
@@ -209,9 +221,9 @@ export default function App() {
       alert('Invalid file name.');
       return;
     }
-    await axios.post('/api/file', { name: fullPath, content: '' });
-    axios.get('/api/files').then(response => {
-      const filtered = response.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]'));
+    await axios.post(`/api/file?workspace=${workspace}`, { name: fullPath, content: '' });
+    axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
+      const filtered = fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]'));
       setFiles(filtered);
       setCurrentFile(fullPath);
       setOpenTabs(tabs => tabs.includes(fullPath) ? tabs : [...tabs, fullPath]);
@@ -237,8 +249,8 @@ export default function App() {
       return;
     }
     try {
-      await axios.post('/api/file', { name: folderPath, content: '' });
-      const folderRes = await axios.get('/api/files');
+      await axios.post(`/api/file?workspace=${workspace}`, { name: folderPath, content: '' });
+      const folderRes = await axios.get(`/api/files?workspace=${workspace}`);
       setFiles(folderRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
     } catch (error) {
       console.error('Error creating folder:', error);
@@ -249,7 +261,7 @@ export default function App() {
   const handleDeleteFolder = async (name, e) => {
     e.stopPropagation();
     if (!window.confirm(`Delete folder '${name}' and all its contents?`)) return;
-    await axios.delete(`/api/file?name=${encodeURIComponent(name)}`);
+    await axios.delete(`/api/file?workspace=${workspace}&name=${encodeURIComponent(name)}`);
     setFiles(files.filter(f => !f.startsWith(name)));
     setOpenTabs(openTabs.filter(f => !f.startsWith(name)));
     if (currentFile && currentFile.startsWith(name)) {
@@ -514,8 +526,8 @@ export default function App() {
   // Handler functions must be defined before commands array
   const handleGoLive = async () => {
     await saveFile();
-    const res = await axios.post('/api/go-live');
-    setLiveStatus(res.data);
+    const goLiveRes = await axios.post(`/api/go-live?workspace=${workspace}`);
+    setLiveStatus(goLiveRes.data);
     if (currentFile && currentFile.endsWith('.html')) {
       window.open(`http://localhost:5500/${currentFile}`, '_blank');
     } else {
@@ -524,8 +536,8 @@ export default function App() {
   };
 
   const handleStopLive = async () => {
-    const res = await axios.post('/api/stop-live');
-    setLiveStatus(res.data);
+    const stopLiveRes = await axios.post(`/api/stop-live?workspace=${workspace}`);
+    setLiveStatus(stopLiveRes.data);
   };
 
   const terminalRef = useRef(null);
@@ -540,8 +552,8 @@ export default function App() {
     setLastRunCode(code);
     setLastRunFile(currentFile);
     if (currentFile.endsWith('.js') || currentFile.endsWith('.jsx') || currentFile.endsWith('.py')) {
-      const res = await axios.post('/api/run', { name: currentFile });
-      setRunOutput(res.data.output);
+      const runRes = await axios.post(`/api/run?workspace=${workspace}`, { name: currentFile });
+      setRunOutput(runRes.data.output);
     } else {
       setRunOutput('');
     }
@@ -558,10 +570,10 @@ export default function App() {
     }
     await saveFile();
     if (!showTerminal) setShowTerminal(true);
-    const res = await axios.post('/api/run', { name: currentFile });
+    const runRes = await axios.post(`/api/run?workspace=${workspace}`, { name: currentFile });
     // Wait a bit to ensure terminal is mounted
     setTimeout(() => {
-      if (terminalRef.current) terminalRef.current.writeToTerminal((res.data.output || '') + '\r\n');
+      if (terminalRef.current) terminalRef.current.writeToTerminal((runRes.data.output || '') + '\r\n');
     }, 200);
   };
 
@@ -705,6 +717,19 @@ export default function App() {
   // Add missing state for terminals and activeTerminal
   const [terminals, setTerminals] = useState([]);
   const [activeTerminal, setActiveTerminal] = useState(null);
+  const [autoSave, setAutoSave] = useState(true);
+  const fileInputRef = useRef(null);
+  const folderInputRef = useRef(null);
+
+  // On mount, check for workspace param
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ws = params.get('workspace');
+    if (ws) {
+      setWorkspace(ws);
+      setShowMainApp(true);
+    }
+  }, []);
 
   // Ensure all referenced functions exist (no-op if already defined)
   // handleAddFile, saveFile, closeTab, handleRun are already defined above
@@ -715,21 +740,36 @@ export default function App() {
     switch (section) {
       case 'File':
         switch (true) {
-          case label.startsWith('New Text File'):
+          case label.startsWith('New File'):
             handleAddFile();
             break;
           case label.startsWith('New Window'):
-            const url = window.location.origin + window.location.pathname + '?blank=1';
-            window.open(url, '_blank');
+            axios.post('/api/new-workspace').then(res => {
+              if (res.data.folder) {
+                const url = `${window.location.origin + window.location.pathname}?workspace=${res.data.folder}`;
+                window.open(url, '_blank');
+              }
+            });
             break;
           case label.startsWith('Open File'):
-            alert('Open File dialog not implemented yet.');
+            if (fileInputRef.current) fileInputRef.current.click();
             break;
           case label.startsWith('Open Folder'):
-            alert('Open Folder dialog not implemented yet.');
+            if (folderInputRef.current) folderInputRef.current.click();
             break;
           case label.startsWith('Save'):
             saveFile();
+            break;
+          case label.startsWith('Save As'):
+            if (currentFile && code !== undefined) {
+              const blob = new Blob([code], { type: 'text/plain' });
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = prompt('Save as:', currentFile) || currentFile;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            }
             break;
           case label.startsWith('Close Editor'):
             if (currentFile) closeTab(currentFile, { stopPropagation: () => {} });
@@ -737,8 +777,24 @@ export default function App() {
           case label.startsWith('Exit'):
             window.close();
             break;
+          case label.startsWith('Auto Save'):
+            setAutoSave((prev) => !prev);
+            break;
+          case label.startsWith('Open Recent'):
+            if (recentFiles.length === 0) {
+              showNotification('No recent files.');
+            } else {
+              const file = prompt('Open recent file:\n' + recentFiles.join('\n'));
+              if (file && recentFiles.includes(file)) {
+                openFile(file);
+              }
+            }
+            break;
+          case label.startsWith('Preferences'):
+            setShowPreferences(true);
+            break;
           default:
-            alert(`Action for 'File > ${label}' not implemented yet.`);
+            showNotification(`Action for 'File > ${label}' not implemented yet.`);
         }
         return;
   
@@ -760,7 +816,7 @@ export default function App() {
             document.execCommand('paste');
             break;
           default:
-            alert(`Action for 'Edit > ${label}' not implemented yet.`);
+            showNotification(`Action for 'Edit > ${label}' not implemented yet.`);
         }
         return;
   
@@ -768,7 +824,7 @@ export default function App() {
         if (label === 'Select All') {
           document.execCommand('selectAll');
         } else {
-          alert(`Action for 'Selection > ${label}' not implemented yet.`);
+          showNotification(`Action for 'Selection > ${label}' not implemented yet.`);
         }
         return;
   
@@ -780,26 +836,26 @@ export default function App() {
           case 'Component Settings':
           case 'Show Component Tree':
           case 'Export Component':
-            alert(`${label} action triggered!`);
+            showNotification(`${label} action triggered!`);
             break;
           default:
-            alert(`Action for 'Components > ${label}' not implemented yet.`);
+            showNotification(`Action for 'Components > ${label}' not implemented yet.`);
         }
         return;
   
       case 'Help':
         switch (label) {
           case 'Welcome':
-            alert('Welcome to the app!');
+            showNotification('Welcome to the app!');
             break;
           case 'Show All Commands':
-            alert('Show All Commands dialog not implemented yet.');
+            showNotification('Show All Commands dialog not implemented yet.');
             break;
           case 'About':
-            alert('About: This is the CLICKK editor.');
+            showNotification('About: This is the CLICKK editor.');
             break;
           default:
-            alert(`Action for 'Help > ${label}' not implemented yet.`);
+            showNotification(`Action for 'Help > ${label}' not implemented yet.`);
         }
         return;
   
@@ -821,7 +877,7 @@ export default function App() {
           case 'Configure Default Build Task':
           case 'Show Running Tasks':
           case 'Toggle Output':
-            alert(`${label} not implemented yet.`);
+            showNotification(`${label} not implemented yet.`);
             break;
           case 'Run Active File':
             handleRun();
@@ -830,12 +886,12 @@ export default function App() {
             setShowTerminal(s => !s);
             break;
           default:
-            alert(`Action for 'Terminal > ${label}' not implemented yet.`);
+            showNotification(`Action for 'Terminal > ${label}' not implemented yet.`);
         }
         return;
   
       default:
-        alert(`Action for '${section} > ${label}' not implemented yet.`);
+        showNotification(`Action for '${section} > ${label}' not implemented yet.`);
     }
   };
   
@@ -845,6 +901,34 @@ export default function App() {
 
   return (
     <div className="app-root" style={{background:'#181a1b', color:'#fff', minHeight:'100vh'}}>
+      {/* Folder input for Open Folder... */}
+      <input
+        type="file"
+        ref={folderInputRef}
+        style={{ display: 'none' }}
+        webkitdirectory="true"
+        mozdirectory="true"
+        msdirectory="true"
+        odirectory="true"
+        directory="true"
+        onChange={async (e) => {
+          const filesArr = Array.from(e.target.files);
+          if (filesArr.length > 0) {
+            const newFiles = [];
+            for (const file of filesArr) {
+              const text = await file.text();
+              newFiles.push(file.webkitRelativePath || file.name);
+              setFiles((prev) => prev.includes(file.webkitRelativePath || file.name) ? prev : [...prev, file.webkitRelativePath || file.name]);
+              setOpenTabs((prev) => prev.includes(file.webkitRelativePath || file.name) ? prev : [...prev, file.webkitRelativePath || file.name]);
+              setCode(text);
+              setCurrentFile(file.webkitRelativePath || file.name);
+              setRunOutput('');
+            }
+          }
+          e.target.value = '';
+        }}
+        multiple
+      />
       {/* Show Download button only if install is available */}
       {showInstallButton && deferredPrompt && (
         <button onClick={handleInstallClick} style={{position: 'fixed', top: 16, right: 16, zIndex: 1000, padding: '10px 20px', background: '#181a1b', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.2)'}}>Download App</button>
@@ -857,7 +941,7 @@ export default function App() {
       )}
       <div className="topbar">
         
-        <Topbar onMenuAction={handleMenuAction} />
+        <Topbar onMenuAction={handleMenuAction} autoSave={autoSave} />
       </div>
       <div className="main-content" style={{display:'flex', height:'calc(100vh - 48px)'}}>
         <div className="sidebar">
@@ -1238,6 +1322,21 @@ export default function App() {
             <div style={{color:'#888'}}>Theme selection coming soon!</div>
             <button onClick={() => setShowThemesPanel(false)} style={{position:'absolute', top:12, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
           </div>
+        </div>
+      )}
+      {/* Preferences Modal */}
+      {showPreferences && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#222', color: '#fff', padding: 32, borderRadius: 8, minWidth: 300 }}>
+            <h2>Preferences</h2>
+            <p>Preferences UI coming soon!</p>
+            <button onClick={() => setShowPreferences(false)} style={{ marginTop: 16 }}>Close</button>
+          </div>
+        </div>
+      )}
+      {notification && (
+        <div style={{ position: 'fixed', bottom: 20, right: 20, background: '#222', color: '#fff', padding: '12px 24px', borderRadius: 8, zIndex: 3000 }}>
+          {notification}
         </div>
       )}
     </div>

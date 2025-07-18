@@ -43,13 +43,21 @@ function listFilesRecursive(dir, prefix = '') {
   return results;
 }
 
+// Helper to get project root based on workspace param
+function getProjectRoot(req) {
+  const ws = req.query.workspace || req.body?.workspace;
+  const projectsDir = path.join(__dirname, 'projects');
+  return path.join(projectsDir, ws || 'demo');
+}
+
 // List files
 app.get('/api/files', (req, res) => {
   try {
-    if (!fs.existsSync(PROJECT_ROOT)) {
-      fs.mkdirSync(PROJECT_ROOT, { recursive: true });
+    const projectRoot = getProjectRoot(req);
+    if (!fs.existsSync(projectRoot)) {
+      fs.mkdirSync(projectRoot, { recursive: true });
     }
-    const files = listFilesRecursive(PROJECT_ROOT);
+    const files = listFilesRecursive(projectRoot);
     res.json(files);
   } catch (err) {
     console.error('Error listing files:', err);
@@ -60,7 +68,8 @@ app.get('/api/files', (req, res) => {
 // Read file
 app.get('/api/file', (req, res) => {
   try {
-    const filePath = path.join(PROJECT_ROOT, req.query.name);
+    const projectRoot = getProjectRoot(req);
+    const filePath = path.join(projectRoot, req.query.name);
     if (!fs.existsSync(filePath) || fs.lstatSync(filePath).isDirectory()) {
       return res.status(404).send('File not found');
     }
@@ -75,7 +84,8 @@ app.get('/api/file', (req, res) => {
 // Save file or create folder
 app.post('/api/file', (req, res) => {
   try {
-    const filePath = path.join(PROJECT_ROOT, req.body.name);
+    const projectRoot = getProjectRoot(req);
+    const filePath = path.join(projectRoot, req.body.name);
     if (req.body.name.endsWith('/')) {
       // Create folder
       if (!fs.existsSync(filePath)) {
@@ -95,7 +105,8 @@ app.post('/api/file', (req, res) => {
 // Delete file or folder
 app.delete('/api/file', (req, res) => {
   try {
-    const filePath = path.join(PROJECT_ROOT, req.query.name);
+    const projectRoot = getProjectRoot(req);
+    const filePath = path.join(projectRoot, req.query.name);
     if (!fs.existsSync(filePath)) return res.sendStatus(200);
     const stat = fs.lstatSync(filePath);
     if (stat.isDirectory()) {
@@ -113,8 +124,9 @@ app.delete('/api/file', (req, res) => {
 // Run file endpoint
 app.post('/api/run', (req, res) => {
   try {
+    const projectRoot = getProjectRoot(req);
     const { name } = req.body;
-    const filePath = path.join(PROJECT_ROOT, name);
+    const filePath = path.join(projectRoot, name);
     if (!fs.existsSync(filePath)) {
       return res.status(404).send('File not found');
     }
@@ -202,6 +214,28 @@ app.post('/api/stop-live', (req, res) => {
     return res.status(200).json({ running: false, message: 'Live server stopped.' });
   }
   return res.status(200).json({ running: false, message: 'Live server was not running.' });
+});
+
+// Create a new workspace by copying the demo folder
+app.post('/api/new-workspace', (req, res) => {
+  try {
+    const projectsDir = path.join(__dirname, 'projects');
+    const baseName = 'demo';
+    let n = 2;
+    let newFolder = path.join(projectsDir, baseName + n);
+    while (fs.existsSync(newFolder)) {
+      n++;
+      newFolder = path.join(projectsDir, baseName + n);
+    }
+    // Only create the new folder, do not copy contents
+    fs.mkdirSync(newFolder, { recursive: true });
+    // Add a default hello.js file
+    fs.writeFileSync(path.join(newFolder, 'hello.js'), "console.log('Welcome to your new workspace!');");
+    res.json({ folder: baseName + n });
+  } catch (err) {
+    console.error('Error creating new workspace:', err);
+    res.status(500).json({ error: 'Failed to create new workspace.' });
+  }
 });
 
 const wss = new WebSocket.Server({ port: 8081 });
