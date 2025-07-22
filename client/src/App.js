@@ -128,6 +128,10 @@ export default function App() {
   const [recentFiles, setRecentFiles] = useState([]);
   const [showPreferences, setShowPreferences] = useState(false);
   const [notification, setNotification] = useState('');
+  const [terminalHeight, setTerminalHeight] = useState(200); // Default terminal height
+  const [activeBottomTab, setActiveBottomTab] = useState('terminal'); // 'terminal' or 'output'
+  const terminalContainerRef = useRef(null);
+  const isResizingRef = useRef(false);
   const showNotification = (msg) => {
     setNotification(msg);
     setTimeout(() => setNotification(''), 2000);
@@ -862,6 +866,7 @@ export default function App() {
       case 'Terminal':
         switch (label) {
           case 'New Terminal':
+            setShowTerminal(true);
             setTerminals(prev => {
               const newId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 1;
               setActiveTerminal(newId);
@@ -869,7 +874,20 @@ export default function App() {
             });
             break;
           case 'Split Terminal':
+            setTerminals(prev => {
+              // If only one terminal, add a second; if two, do nothing (or allow more if desired)
+              if (prev.length < 2) {
+                const newId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 1;
+                setActiveTerminal(newId);
+                return [...prev, { id: newId }];
+              }
+              return prev;
+            });
+            setShowTerminal(true);
+            break;
           case 'Run Task':
+            handleRun();
+            break;
           case 'Run Build Task':
           case 'Restart Task':
           case 'Terminate Task':
@@ -895,6 +913,25 @@ export default function App() {
     }
   };
   
+  // Handle mouse events for resizing terminal
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizingRef.current || !terminalContainerRef.current) return;
+      const rect = terminalContainerRef.current.getBoundingClientRect();
+      const newHeight = Math.max(100, window.innerHeight - e.clientY - 36); // 36 = status bar height
+      setTerminalHeight(newHeight);
+    };
+    const handleMouseUp = () => {
+      isResizingRef.current = false;
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
   if (!showMainApp) {
     return <LandingPage onInstall={handleInstallClick} showInstallButton={showInstallButton} />;
   }
@@ -1014,26 +1051,6 @@ export default function App() {
                 </div>
               ))}
             </div>
-            {/* Run button added here */}
-            <button
-              onClick={handleRun}
-              disabled={!(currentFile && (currentFile.endsWith('.js') || currentFile.endsWith('.jsx') || currentFile.endsWith('.py') || currentFile.endsWith('.html')))}
-              style={{
-                margin: '8px 0 0 12px',
-                alignSelf: 'flex-start',
-                padding: '6px 18px',
-                background: '#4fc3f7',
-                color: '#181a1b',
-                border: 'none',
-                borderRadius: 4,
-                fontWeight: 600,
-                fontSize: '1rem',
-                cursor: (currentFile && (currentFile.endsWith('.js') || currentFile.endsWith('.jsx') || currentFile.endsWith('.py') || currentFile.endsWith('.html'))) ? 'pointer' : 'not-allowed',
-                opacity: (currentFile && (currentFile.endsWith('.js') || currentFile.endsWith('.jsx') || currentFile.endsWith('.py') || currentFile.endsWith('.html'))) ? 1 : 0.5
-              }}
-            >
-              ▶ Run
-            </button>
             <div style={{flex:1, display:'flex', flexDirection:'column', background:'#23272e'}}>
               {currentFile && currentFile.endsWith('.html') ? (
                 <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
@@ -1111,27 +1128,155 @@ export default function App() {
                 />
               )}
             </div>
-            {/* Output panel for Run button */}
-            <div style={{
-              background: '#111',
-              color: '#fff',
-              fontFamily: 'Fira Mono, monospace',
-              fontSize: '1rem',
-              padding: '10px 16px',
-              minHeight: '60px',
-              maxHeight: '180px',
-              overflow: 'auto',
-              borderRadius: '4px',
-              margin: '12px'
-            }}>
-              <strong>Output:</strong>
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{runOutput ? runOutput : 'No output yet. Click ▶ Run to see results here.'}</pre>
-            </div>
           </div>
-          {/* Terminal always at the bottom */}
+          {/* Output/Terminal tab switcher and panel with vertical resizing */}
           {showTerminal && (
-            <div style={{height:'200px', background:'#181a1b', borderTop:'1px solid #333', color:'#fff'}}>
-              <TerminalPanel ref={terminalRef} />
+            <div
+              ref={terminalContainerRef}
+              style={{
+                height: terminalHeight,
+                background: '#181a1b',
+                borderTop: '1px solid #333',
+                color: '#fff',
+                position: 'relative',
+                userSelect: isResizingRef.current ? 'none' : 'auto',
+                transition: isResizingRef.current ? 'none' : 'height 0.1s',
+                minHeight: 100,
+                maxHeight: '80vh',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              {/* Resizer bar (move above the tab bar for better UX) */}
+              <div
+                style={{
+                  height: 6,
+                  cursor: 'ns-resize',
+                  background: isResizingRef.current ? '#4fc3f7' : '#23272e',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  zIndex: 10,
+                }}
+                onMouseDown={() => {
+                  isResizingRef.current = true;
+                }}
+              />
+              {/* Tab bar */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                background: '#23272e',
+                borderBottom: '1px solid #333',
+                height: 36,
+                zIndex: 3,
+                position: 'relative',
+                marginTop: 6, // To account for the resizer bar
+              }}>
+                <button
+                  onClick={() => setActiveBottomTab('terminal')}
+                  style={{
+                    background: activeBottomTab === 'terminal' ? '#181a1b' : 'none',
+                    color: activeBottomTab === 'terminal' ? '#4fc3f7' : '#fff',
+                    border: 'none',
+                    borderBottom: activeBottomTab === 'terminal' ? '2px solid #4fc3f7' : '2px solid transparent',
+                    fontWeight: 600,
+                    fontSize: '1rem',
+                    padding: '0 18px',
+                    height: '100%',
+                    cursor: 'pointer',
+                  }}
+                >Terminal</button>
+                <button
+                  onClick={() => setActiveBottomTab('output')}
+                  style={{
+                    background: activeBottomTab === 'output' ? '#181a1b' : 'none',
+                    color: activeBottomTab === 'output' ? '#4fc3f7' : '#fff',
+                    border: 'none',
+                    borderBottom: activeBottomTab === 'output' ? '2px solid #4fc3f7' : '2px solid transparent',
+                    fontWeight: 600,
+                    fontSize: '1rem',
+                    padding: '0 18px',
+                    height: '100%',
+                    cursor: 'pointer',
+                  }}
+                >Output</button>
+                {/* Close button */}
+                <button
+                  onClick={() => setShowTerminal(false)}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 8,
+                    background: 'none',
+                    color: '#fff',
+                    border: 'none',
+                    fontSize: 22,
+                    cursor: 'pointer',
+                    zIndex: 3,
+                    opacity: 0.7,
+                    height: '100%',
+                  }}
+                  title="Close Terminal/Output"
+                >×</button>
+              </div>
+              {/* Panel content */}
+              <div style={{ flex: 1, overflow: 'auto', width: '100%' }}>
+                {activeBottomTab === 'terminal' ? (
+                  terminals.length > 1 ? (
+                    <div style={{ display: 'flex', height: '100%', width: '100%' }}>
+                      {terminals.map((term, idx) => (
+                        <div key={term.id} style={{ flex: 1, borderRight: idx === 0 ? '1px solid #333' : 'none', position: 'relative', minWidth: 0 }}>
+                          <button
+                            onClick={() => {
+                              setTerminals(prev => prev.filter(t => t.id !== term.id));
+                              if (activeTerminal === term.id && terminals.length > 1) {
+                                setActiveTerminal(terminals[(idx === 0 ? 1 : 0)].id);
+                              }
+                            }}
+                            style={{
+                              position: 'absolute',
+                              top: 6,
+                              right: 8,
+                              background: 'none',
+                              color: '#fff',
+                              border: 'none',
+                              fontSize: 18,
+                              cursor: 'pointer',
+                              zIndex: 4,
+                              opacity: 0.7,
+                            }}
+                            title="Close Terminal"
+                          >×</button>
+                          <TerminalPanel key={term.id} ref={idx === 0 ? terminalRef : null} />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ height: '100%', width: '100%' }}>
+                      <TerminalPanel ref={terminalRef} />
+                    </div>
+                  )
+                ) : (
+                  <div style={{
+                    background: '#111',
+                    color: '#fff',
+                    fontFamily: 'Fira Mono, monospace',
+                    fontSize: '1rem',
+                    padding: '10px 16px',
+                    minHeight: '60px',
+                    maxHeight: '100%',
+                    overflow: 'auto',
+                    borderRadius: '4px',
+                    margin: '0',
+                    height: '100%',
+                  }}>
+                    <strong>Output:</strong>
+                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{runOutput ? runOutput : 'No output yet. Click ▶ Run to see results here.'}</pre>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

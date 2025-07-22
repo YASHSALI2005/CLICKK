@@ -238,6 +238,42 @@ app.post('/api/new-workspace', (req, res) => {
   }
 });
 
+// const wss = new WebSocket.Server({ port: 8081 });
+
+// wss.on('connection', function connection(ws) {
+//   // Use cmd.exe on Windows, bash otherwise
+//   const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
+//   const ptyProcess = pty.spawn(shell, [], {
+//     name: 'xterm-color',
+//     cols: 80,
+//     rows: 30,
+//     cwd: PROJECT_ROOT, // Start terminal in the project root
+//     env: process.env,
+//   });
+
+//   // Send shell output to client
+//   ptyProcess.on('data', function(data) {
+//     ws.send(data);
+//   });
+
+//   // Error handler to prevent crash on EPIPE
+//   ptyProcess.on('error', (err) => {
+//     console.error('PTY error:', err);
+//   });
+
+//   // Receive input from client
+//   ws.on('message', function incoming(message) {
+//     ptyProcess.write(message);
+//   });
+
+//   ws.on('close', () => {
+//     ptyProcess.kill();
+//     // No tempDir to clean up
+//   });
+// });
+// server.js
+const { spawn } = require('child_process');
+
 const wss = new WebSocket.Server({ port: 8081 });
 
 wss.on('connection', function connection(ws) {
@@ -268,7 +304,6 @@ wss.on('connection', function connection(ws) {
 
   ws.on('close', () => {
     ptyProcess.kill();
-    // No tempDir to clean up
   });
 });
 
