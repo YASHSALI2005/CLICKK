@@ -1,0 +1,7 @@
+# This is a placeholder file for ClickSetup.exe
+# Replace this with your actual executable file
+# 
+# To add your actual ClickSetup.exe file:
+# 1. Build your application
+# 2. Copy the executable to this location: client/public/ClickSetup.exe
+# 3. The download button will then work properly 
