@@ -132,9 +132,32 @@ export default function App() {
   const [activeBottomTab, setActiveBottomTab] = useState('terminal'); // 'terminal' or 'output'
   const terminalContainerRef = useRef(null);
   const isResizingRef = useRef(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [explorerOpen, setExplorerOpen] = useState(true);
+  // Add missing state for terminals and activeTerminal
+  const [terminals, setTerminals] = useState([]);
+  const [activeTerminal, setActiveTerminal] = useState(null);
+  const [autoSave, setAutoSave] = useState(true);
+  const fileInputRef = useRef(null);
+  const folderInputRef = useRef(null);
+  // Add terminal refs map
+  const terminalRefs = useRef(new Map());
   const showNotification = (msg) => {
     setNotification(msg);
     setTimeout(() => setNotification(''), 2000);
+  };
+
+  // Framework creation commands for reference
+  const frameworkCommands = {
+    'React': 'npx create-react-app projectName',
+    'Next.js': 'npx create-next-app projectName',
+    'Angular': 'ng new projectName',
+    'Express.js': 'npx express-generator projectName',
+    'NestJS': 'npx @nestjs/cli new projectName',
+    'Vite': 'npm create vite@latest projectName',
+    'Prisma': 'npx prisma init',
+    'Supabase': 'npx supabase@latest init projectName',
+    'Firebase': 'npm install -g firebase-tools && firebase init'
   };
   // Poll live server status (optional, for robustness)
   // useEffect(() => {
@@ -500,7 +523,195 @@ export default function App() {
       return (
         <div className="explorer">
           <div className="explorer-title">Source Control</div>
-          <div style={{padding:'12px',color:'#bdbdbd'}}>Git integration coming soon!</div>
+          <div style={{padding:'12px'}}>
+            <div style={{marginBottom:'12px',color:'#bdbdbd'}}>Git Commands</div>
+            <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+              <button 
+                onClick={() => {
+                  if (showTerminal && terminalRef.current) {
+                    terminalRef.current.writeToTerminal('git status\r\n');
+                  } else {
+                    setShowTerminal(true);
+                    setTimeout(() => {
+                      if (terminalRef.current) {
+                        terminalRef.current.writeToTerminal('git status\r\n');
+                      }
+                    }, 200);
+                  }
+                }}
+                style={{
+                  background: '#4fc3f7',
+                  color: '#181a1b',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 600
+                }}
+              >
+                Git Status
+              </button>
+              <button 
+                onClick={() => {
+                  if (showTerminal && terminalRef.current) {
+                    terminalRef.current.writeToTerminal('git add .\r\n');
+                  } else {
+                    setShowTerminal(true);
+                    setTimeout(() => {
+                      if (terminalRef.current) {
+                        terminalRef.current.writeToTerminal('git add .\r\n');
+                      }
+                    }, 200);
+                  }
+                }}
+                style={{
+                  background: '#4fc3f7',
+                  color: '#181a1b',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 600
+                }}
+              >
+                Git Add All
+              </button>
+              <button 
+                onClick={() => {
+                  const message = prompt('Enter commit message:');
+                  if (message && showTerminal && terminalRef.current) {
+                    terminalRef.current.writeToTerminal(`git commit -m "${message}"\r\n`);
+                  } else if (message) {
+                    setShowTerminal(true);
+                    setTimeout(() => {
+                      if (terminalRef.current) {
+                        terminalRef.current.writeToTerminal(`git commit -m "${message}"\r\n`);
+                      }
+                    }, 200);
+                  }
+                }}
+                style={{
+                  background: '#4fc3f7',
+                  color: '#181a1b',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 600
+                }}
+              >
+                Git Commit
+              </button>
+              <button 
+                onClick={() => {
+                  if (showTerminal && terminalRef.current) {
+                    terminalRef.current.writeToTerminal('git push\r\n');
+                  } else {
+                    setShowTerminal(true);
+                    setTimeout(() => {
+                      if (terminalRef.current) {
+                        terminalRef.current.writeToTerminal('git push\r\n');
+                      }
+                    }, 200);
+                  }
+                }}
+                style={{
+                  background: '#4fc3f7',
+                  color: '#181a1b',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 600
+                }}
+              >
+                Git Push
+              </button>
+              <button 
+                onClick={() => {
+                  if (showTerminal && terminalRef.current) {
+                    terminalRef.current.writeToTerminal('git pull\r\n');
+                  } else {
+                    setShowTerminal(true);
+                    setTimeout(() => {
+                      if (terminalRef.current) {
+                        terminalRef.current.writeToTerminal('git pull\r\n');
+                      }
+                    }, 200);
+                  }
+                }}
+                style={{
+                  background: '#4fc3f7',
+                  color: '#181a1b',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 600
+                }}
+              >
+                Git Pull
+              </button>
+              <button 
+                onClick={() => {
+                  if (showTerminal && terminalRef.current) {
+                    terminalRef.current.writeToTerminal('git log --oneline -10\r\n');
+                  } else {
+                    setShowTerminal(true);
+                    setTimeout(() => {
+                      if (terminalRef.current) {
+                        terminalRef.current.writeToTerminal('git log --oneline -10\r\n');
+                      }
+                    }, 200);
+                  }
+                }}
+                style={{
+                  background: '#4fc3f7',
+                  color: '#181a1b',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 600
+                }}
+              >
+                Git Log
+              </button>
+              <button 
+                onClick={() => {
+                  const branch = prompt('Enter branch name:');
+                  if (branch && showTerminal && terminalRef.current) {
+                    terminalRef.current.writeToTerminal(`git checkout -b ${branch}\r\n`);
+                  } else if (branch) {
+                    setShowTerminal(true);
+                    setTimeout(() => {
+                      if (terminalRef.current) {
+                        terminalRef.current.writeToTerminal(`git checkout -b ${branch}\r\n`);
+                      }
+                    }, 200);
+                  }
+                }}
+                style={{
+                  background: '#4fc3f7',
+                  color: '#181a1b',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 600
+                }}
+              >
+                New Branch
+              </button>
+            </div>
+          </div>
         </div>
       );
     }
@@ -716,15 +927,6 @@ export default function App() {
     }
   }, [fileMenu]);
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [explorerOpen, setExplorerOpen] = useState(true);
-  // Add missing state for terminals and activeTerminal
-  const [terminals, setTerminals] = useState([]);
-  const [activeTerminal, setActiveTerminal] = useState(null);
-  const [autoSave, setAutoSave] = useState(true);
-  const fileInputRef = useRef(null);
-  const folderInputRef = useRef(null);
-
   // On mount, check for workspace param
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -931,6 +1133,29 @@ export default function App() {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, []);
+
+  // Initialize first terminal when terminal is opened
+  useEffect(() => {
+    if (showTerminal && terminals.length === 0) {
+      setTerminals([{ id: 1 }]);
+      setActiveTerminal(1);
+    }
+  }, [showTerminal]);
+
+  // Ensure activeTerminal is set when terminals exist
+  useEffect(() => {
+    if (terminals.length > 0 && !activeTerminal) {
+      setActiveTerminal(terminals[0].id);
+    }
+    // Also handle case where activeTerminal no longer exists
+    if (activeTerminal && !terminals.find(t => t.id === activeTerminal)) {
+      if (terminals.length > 0) {
+        setActiveTerminal(terminals[0].id);
+      } else {
+        setActiveTerminal(null);
+      }
+    }
+  }, [terminals, activeTerminal]);
 
   if (!showMainApp) {
     return <LandingPage onInstall={handleInstallClick} showInstallButton={showInstallButton} />;
@@ -1202,62 +1427,292 @@ export default function App() {
                     cursor: 'pointer',
                   }}
                 >Output</button>
+                {/* Add terminal (+) button, right-aligned */}
+                <div style={{ flex: 1 }} />
+                <button
+                  onClick={() => {
+                    setShowTerminal(true);
+                    if (terminals.length === 0) {
+                      // Create first terminal
+                      setTerminals([{ id: 1 }]);
+                      setActiveTerminal(1);
+                    } else {
+                      // Create additional terminal
+                      const newId = Math.max(...terminals.map(t => t.id)) + 1;
+                      setTerminals(prev => [...prev, { id: newId }]);
+                      setActiveTerminal(newId);
+                    }
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#fff',
+                    fontSize: 20,
+                    cursor: 'pointer',
+                    marginRight: 8,
+                    marginLeft: 4,
+                    padding: 0,
+                    width: 28,
+                    height: 28,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 4,
+                    transition: 'background 0.15s',
+                  }}
+                  title="New Terminal"
+                >
+                  <span style={{fontSize: 22, fontWeight: 600, lineHeight: 1}}>+</span>
+                </button>
+                {/* Split terminal button */}
+                <button
+                  onClick={() => {
+                    setShowTerminal(true);
+                    // Create split view with two terminals side by side
+                    const leftTerminalId = terminals.length > 0 ? Math.max(...terminals.map(t => t.id)) + 1 : 1;
+                    const rightTerminalId = leftTerminalId + 1;
+                    
+                    setTerminals(prev => [
+                      ...prev, 
+                      { id: leftTerminalId, position: 'left' },
+                      { id: rightTerminalId, position: 'right' }
+                    ]);
+                    // Set active terminal to the left split terminal
+                    setActiveTerminal(leftTerminalId);
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#fff',
+                    fontSize: 16,
+                    cursor: 'pointer',
+                    marginRight: 8,
+                    padding: 0,
+                    width: 28,
+                    height: 28,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 4,
+                    transition: 'background 0.15s',
+                  }}
+                  title="Split Terminal"
+                >
+                  <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M3 3h18v18H3V3zm2 2v14h14V5H5zm2 2h4v10H7V7zm6 0h4v10h-4V7z"/>
+                  </svg>
+                </button>
                 {/* Close button */}
                 <button
-                  onClick={() => setShowTerminal(false)}
+                  onClick={() => {
+                    // Check if we're in split view (visible split terminals)
+                    const hasSplitTerminals = terminals.some(t => t.position && !t.hidden);
+                    
+                    if (hasSplitTerminals) {
+                      // In split view - close only the split terminals, keep other terminals
+                      console.log('Current terminals:', terminals);
+                      console.log('Split terminals detected:', terminals.filter(t => t.position));
+                      console.log('Regular terminals:', terminals.filter(t => !t.position));
+                      console.log('Active terminal:', activeTerminal);
+                      
+                      if (window.confirm('Close split terminals? This will stop any running processes in the split view.')) {
+                        // Get current terminals before filtering
+                        const currentTerminals = [...terminals];
+                        const splitTerminals = currentTerminals.filter(t => t.position && !t.hidden);
+                        const regularTerminals = currentTerminals.filter(t => !t.position && !t.hidden);
+                        
+                        console.log('Deleting split terminals:', splitTerminals.map(t => t.id));
+                        console.log('Keeping regular terminals:', regularTerminals.map(t => t.id));
+                        
+                        // Remove only split terminals, preserve existing regular terminals
+                        console.log('Before deletion - terminals:', terminals);
+                        
+                        // Keep only the regular terminals (without position property and not hidden)
+                        const updatedTerminals = terminals.filter(t => !t.position && !t.hidden);
+                        console.log('After deletion - terminals:', updatedTerminals);
+                        console.log('Regular terminals that should be preserved:', regularTerminals);
+                        
+                        // Verify we're keeping the same regular terminals
+                        const preservedTerminals = regularTerminals.map(t => ({ id: t.id, preserved: true }));
+                        console.log('Preserved terminal IDs:', preservedTerminals.map(t => t.id));
+                        
+                        // Instead of deleting split terminals, mark them as hidden to preserve connections
+                        setTerminals(prev => {
+                          console.log('Previous terminals in setState:', prev);
+                                                  const updatedTerminals = prev.map(t => {
+                          if (t.position && !t.hidden) {
+                            // Mark split terminals as hidden instead of deleting them
+                            return { ...t, hidden: true };
+                          }
+                          return t;
+                        });
+                          console.log('Updated terminals (split terminals hidden):', updatedTerminals);
+                          
+                          return updatedTerminals;
+                        });
+                        
+                        // Set active terminal to first regular terminal, or null if none
+                        if (updatedTerminals.length > 0) {
+                          const firstRegularTerminal = updatedTerminals[0].id;
+                          console.log('Setting active terminal to:', firstRegularTerminal);
+                          setActiveTerminal(firstRegularTerminal);
+                        } else {
+                          // If no regular terminals left, close the panel
+                          console.log('No regular terminals left, closing panel');
+                          setShowTerminal(false);
+                          setActiveTerminal(null);
+                        }
+                      }
+                    } else if (terminals.length > 1) {
+                      // Multiple regular terminals - delete only the active terminal
+                      if (window.confirm(`Delete terminal ${activeTerminal}? This will stop any running processes.`)) {
+                        setTerminals(prev => {
+                          const remaining = prev.filter(t => t.id !== activeTerminal);
+                          if (remaining.length > 0) {
+                            setActiveTerminal(remaining[0].id);
+                          }
+                          return remaining;
+                        });
+                      }
+                    } else {
+                      // Single terminal - close the entire panel
+                      if (window.confirm('Close terminal panel? This will stop any running processes.')) {
+                        setShowTerminal(false);
+                        setTerminals([]);
+                        setActiveTerminal(null);
+                      }
+                    }
+                  }}
                   style={{
-                    position: 'absolute',
-                    top: 0,
-                    right: 8,
                     background: 'none',
                     color: '#fff',
                     border: 'none',
-                    fontSize: 22,
+                    fontSize: 16,
                     cursor: 'pointer',
-                    zIndex: 3,
                     opacity: 0.7,
                     height: '100%',
+                    width: 28,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 8,
                   }}
-                  title="Close Terminal/Output"
-                >×</button>
+                  title={terminals.some(t => t.position) ? "Close Split Terminals" : (terminals.length > 1 ? "Delete Active Terminal" : "Close Terminal Panel")}
+                >
+                  <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                  </svg>
+                </button>
               </div>
               {/* Panel content */}
-              <div style={{ flex: 1, overflow: 'auto', width: '100%' }}>
+              <div style={{ flex: 1, overflow: 'auto', width: '100%', display: 'flex' }}>
                 {activeBottomTab === 'terminal' ? (
-                  terminals.length > 1 ? (
-                    <div style={{ display: 'flex', height: '100%', width: '100%' }}>
-                      {terminals.map((term, idx) => (
-                        <div key={term.id} style={{ flex: 1, borderRight: idx === 0 ? '1px solid #333' : 'none', position: 'relative', minWidth: 0 }}>
-                          <button
-                            onClick={() => {
-                              setTerminals(prev => prev.filter(t => t.id !== term.id));
-                              if (activeTerminal === term.id && terminals.length > 1) {
-                                setActiveTerminal(terminals[(idx === 0 ? 1 : 0)].id);
-                              }
-                            }}
-                            style={{
-                              position: 'absolute',
-                              top: 6,
-                              right: 8,
-                              background: 'none',
-                              color: '#fff',
-                              border: 'none',
-                              fontSize: 18,
-                              cursor: 'pointer',
-                              zIndex: 4,
-                              opacity: 0.7,
-                            }}
-                            title="Close Terminal"
-                          >×</button>
-                          <TerminalPanel key={term.id} ref={idx === 0 ? terminalRef : null} />
+                  <div style={{ display: 'flex', height: '100%', width: '100%' }}>
+                    {/* Main terminal area */}
+                    <div style={{ flex: 1, position: 'relative' }}>
+                      {terminals.length > 0 ? (
+                        // Always render all terminals, but show/hide based on state
+                        <div style={{ height: '100%', width: '100%' }}>
+                          {/* Render all regular terminals (always present) */}
+                          {terminals.filter(t => !t.position).map((term, idx) => (
+                            <div 
+                              key={term.id} 
+                              style={{ 
+                                display: (activeTerminal === term.id && !terminals.some(t => t.position && !t.hidden)) ? 'block' : 'none',
+                                height: '100%',
+                                width: '100%'
+                              }}
+                            >
+                              <TerminalPanel 
+                                ref={activeTerminal === term.id ? terminalRef : null} 
+                                workspace={workspace}
+                                onProjectCreated={() => {
+                                  axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
+                                    setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
+                                  });
+                                }} 
+                              />
+                            </div>
+                          ))}
+                          
+                          {/* Render split terminals when visible */}
+                          {terminals.some(t => t.position && !t.hidden) && (
+                            <div style={{ display: 'flex', height: '100%', width: '100%' }}>
+                              {terminals.filter(t => t.position && !t.hidden).map((term, idx) => (
+                                <div 
+                                  key={term.id} 
+                                  style={{ 
+                                    flex: 1,
+                                    height: '100%',
+                                    borderRight: term.position === 'left' ? '1px solid #333' : 'none'
+                                  }}
+                                >
+                                  <TerminalPanel 
+                                    workspace={workspace}
+                                    onProjectCreated={() => {
+                                      axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
+                                        setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
+                                      });
+                                    }} 
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      ))}
+                      ) : (
+                        <div style={{ height: '100%', width: '100%' }}>
+                          <TerminalPanel 
+                            ref={terminalRef} 
+                            workspace={workspace}
+                            onProjectCreated={() => {
+                              axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
+                                setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
+                              });
+                            }} 
+                          />
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <div style={{ height: '100%', width: '100%' }}>
-                      <TerminalPanel ref={terminalRef} />
-                    </div>
-                  )
+                    {/* Terminal tabs on the right - show when multiple terminals or visible split terminals */}
+                    {(terminals.filter(t => !t.hidden).length > 1 || terminals.some(t => t.position && !t.hidden)) && (
+                      <div style={{ 
+                        width: 40, 
+                        background: '#23272e', 
+                        borderLeft: '1px solid #333',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        paddingTop: 8
+                      }}>
+                        {terminals.filter(t => !t.hidden).map((term, idx) => (
+                          <button
+                            key={term.id}
+                            onClick={() => setActiveTerminal(term.id)}
+                            style={{
+                              width: 32,
+                              height: 32,
+                              margin: '2px 0',
+                              background: activeTerminal === term.id ? '#4fc3f7' : 'transparent',
+                              border: '1px solid #333',
+                              borderRadius: 4,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: activeTerminal === term.id ? '#181a1b' : '#fff',
+                              fontSize: 12,
+                              position: 'relative'
+                            }}
+                            title={`Terminal ${idx + 1}${term.position ? ` (${term.position})` : ''}`}
+                          >
+                            <span style={{ fontSize: 14 }}>›_</span>
+                            {/* Removed the close button - trash can in tab bar handles deletion */}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <div style={{
                     background: '#111',

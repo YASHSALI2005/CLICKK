@@ -276,14 +276,22 @@ const { spawn } = require('child_process');
 
 const wss = new WebSocket.Server({ port: 8081 });
 
-wss.on('connection', function connection(ws) {
+wss.on('connection', function connection(ws, req) {
+  const url = require('url');
+  const query = url.parse(req.url, true).query;
+  const workspace = query.workspace || 'demo';
+  const cwd = path.join(__dirname, 'projects', workspace);
+
+  // Ensure workspace directory exists
+  if (!fs.existsSync(cwd)) fs.mkdirSync(cwd, { recursive: true });
+
   // Use cmd.exe on Windows, bash otherwise
   const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
   const ptyProcess = pty.spawn(shell, [], {
     name: 'xterm-color',
     cols: 80,
     rows: 30,
-    cwd: PROJECT_ROOT, // Start terminal in the project root
+    cwd,
     env: process.env,
   });
 

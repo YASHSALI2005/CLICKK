@@ -18,10 +18,59 @@ const TerminalPanel = forwardRef((props, ref) => {
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    const socket = new window.WebSocket('ws://localhost:8081');
+    const wsUrl = props.workspace ? `ws://localhost:8081?workspace=${encodeURIComponent(props.workspace)}` : 'ws://localhost:8081';
+    const socket = new window.WebSocket(wsUrl);
 
     socket.onmessage = (event) => {
       term.write(event.data);
+      // Project creation detection for multiple frameworks
+      if (props.onProjectCreated) {
+        const data = event.data.toLowerCase();
+        
+        // React detection
+        if (data.includes('happy hacking!') || data.includes('npm start')) {
+          props.onProjectCreated();
+        }
+        // Next.js detection
+        else if (data.includes('npm run dev') || data.includes('ready - started server')) {
+          props.onProjectCreated();
+        }
+        // Angular detection
+        else if (data.includes('ng serve') || data.includes('angular cli') || data.includes('project created successfully')) {
+          props.onProjectCreated();
+        }
+        // Express.js detection
+        else if (data.includes('express-generator') || data.includes('express app created') || data.includes('npm start')) {
+          props.onProjectCreated();
+        }
+        // NestJS detection
+        else if (data.includes('nest new') || data.includes('nestjs') || data.includes('npm run start:dev')) {
+          props.onProjectCreated();
+        }
+        // Vite detection
+        else if (data.includes('vite') || data.includes('npm run dev') || data.includes('local:')) {
+          props.onProjectCreated();
+        }
+        // Prisma detection
+        else if (data.includes('prisma init') || data.includes('database url') || data.includes('prisma schema')) {
+          props.onProjectCreated();
+        }
+        // Supabase detection
+        else if (data.includes('supabase') || data.includes('supabase init') || data.includes('project initialized')) {
+          props.onProjectCreated();
+        }
+        // Firebase detection
+        else if (data.includes('firebase init') || data.includes('firebase project') || data.includes('firebase.json')) {
+          props.onProjectCreated();
+        }
+        // Git operations detection
+        else if (data.includes('git add') || data.includes('git commit') || data.includes('git push') || data.includes('git pull') || data.includes('git checkout')) {
+          // Refresh file explorer after Git operations
+          setTimeout(() => {
+            props.onProjectCreated();
+          }, 1000);
+        }
+      }
     };
 
     term.onData(data => {
