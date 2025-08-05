@@ -7,8 +7,9 @@ import TerminalPanel from './TerminalPanel';
 import LandingPage from './LandingPage';
 import { FileIcon, defaultStyles } from 'react-file-icon';
 import Topbar from './components/Topbar';
+import AIAssistant from './components/AIAssistant';
 
-const SIDEBAR_ICONS = [
+  const SIDEBAR_ICONS = [
   {
     key: 'explorer',
     title: 'Explorer',
@@ -35,6 +36,13 @@ const SIDEBAR_ICONS = [
     title: 'Terminal',
     svg: (
       <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 17h16M8 9l3 3-3 3"/><rect x="3" y="5" width="18" height="14" rx="2"/></svg>
+    )
+  },
+  {
+    key: 'ai',
+    title: 'AI Assistant',
+    svg: (
+      <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8"/><path d="M8 13h6"/></svg>
     )
   },
   {
@@ -138,6 +146,7 @@ export default function App() {
   const [terminals, setTerminals] = useState([]);
   const [activeTerminal, setActiveTerminal] = useState(null);
   const [autoSave, setAutoSave] = useState(true);
+  const [isAIAssistantVisible, setIsAIAssistantVisible] = useState(true); // State to control AI panel visibility
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
   // Add terminal refs map
@@ -159,13 +168,6 @@ export default function App() {
     'Supabase': 'npx supabase@latest init projectName',
     'Firebase': 'npm install -g firebase-tools && firebase init'
   };
-  // Poll live server status (optional, for robustness)
-  // useEffect(() => {
-  //   const interval = setInterval(() => {
-  //     axios.get('http://localhost:5000/api/live-status').then(res => setLiveStatus(res.data));
-  //   }, 2000);
-  //   return () => clearInterval(interval);
-  // }, []);
 
   // Load file list
   useEffect(() => {
@@ -259,6 +261,18 @@ export default function App() {
     });
   };
 
+  const handleFileCreate = async (fileName, content) => {
+    await axios.post(`/api/file?workspace=${workspace}`, { name: fileName, content });
+    axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
+      const filtered = fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]'));
+      setFiles(filtered);
+      setCurrentFile(fileName);
+      setOpenTabs(tabs => tabs.includes(fileName) ? tabs : [...tabs, fileName]);
+      setCode(content);
+      setRunOutput('');
+    });
+  };
+
   const handleAddFolder = async (parentPath = '') => {
     if (typeof parentPath !== 'string') parentPath = '';
     let name = prompt('Enter new folder name:');
@@ -318,40 +332,34 @@ export default function App() {
   };
 
   const renderFileTree = (files) => {
-    // Filter out files that have the same name as a folder (e.g., 'mko' if 'mko/' exists)
     const folderNames = new Set(
       files.filter(f => typeof f === 'string' && f.endsWith('/')).map(f => f.slice(0, -1))
     );
     const filteredFiles = files.filter(f => {
       if (typeof f !== 'string') return false;
-      if (!f.endsWith('/') && folderNames.has(f)) return false; // Remove file if folder exists
+      if (!f.endsWith('/') && folderNames.has(f)) return false; 
       return true;
     });
     const tree = {};
-    // First build the tree structure
     filteredFiles.forEach(f => {
-      if (typeof f !== 'string') return; // Defensive: skip non-string parts
+      if (typeof f !== 'string') return;
       const parts = f.split('/').filter(Boolean);
       let node = tree;
       parts.forEach((part, i) => {
-        if (typeof part !== 'string') return; // Defensive: skip non-string parts
+        if (typeof part !== 'string') return;
         const isLast = i === parts.length - 1;
         const isFolder = f.endsWith('/') && isLast;
-        // If node[part] is a file but we need a folder, overwrite it
         if (!Object.prototype.hasOwnProperty.call(node, part) || (isFolder && node[part] === null)) {
           node[part] = isFolder ? {} : null;
         }
-        // Always ensure node[part] is an object before traversing
         if (!isLast) {
           if (node[part] === null) node[part] = {};
           node = node[part];
         }
       });
     });
-    // Then render the tree
     const renderNode = (node, path = '', isRoot = false) => {
       let entries = Object.entries(node);
-      // No sorting, preserve original order
       return (
         <ul className="file-list" style={{ marginLeft: path ? 16 : 0 }}>
           {entries.map(([name, child]) => {
@@ -368,7 +376,7 @@ export default function App() {
                     onContextMenu={e => {
                       e.preventDefault();
                       setFolderMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
-                      setFileMenu({ path: null, anchor: null }); // Close file menu if open
+                      setFileMenu({ path: null, anchor: null });
                     }}
                   >
                     <img
@@ -379,7 +387,6 @@ export default function App() {
                     <img src={'/folder2.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block' }} />
                     {name}
                   </div>
-                  {/* Dropdown menu for right-click */}
                   {folderMenu.path === fullPath && folderMenu.anchor && (
                     <div style={{
                       position: 'fixed',
@@ -435,7 +442,7 @@ export default function App() {
                   onContextMenu={e => {
                     e.preventDefault();
                     setFileMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
-                    setFolderMenu({ path: null, anchor: null }); // Close folder menu if open
+                    setFolderMenu({ path: null, anchor: null });
                   }}
                   style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
                 >
@@ -443,7 +450,6 @@ export default function App() {
                     <img src={getFileIcon(name)} alt={getFileExtension(name) + ' file'} style={{ width: 16, height: 16 }} />
                   </span>
                   {name}
-                  {/* Dropdown menu for right-click on file */}
                   {fileMenu.path === fullPath && fileMenu.anchor && (
                     <div style={{
                       position: 'fixed',
@@ -480,6 +486,8 @@ export default function App() {
   };
 
   const renderSidebarPanel = () => {
+    if (!explorerOpen) return null; // Hide panel if explorer is closed
+
     if (activeSidebar === 'explorer') {
       return (
         <div className="explorer">
@@ -506,16 +514,16 @@ export default function App() {
             />
           </form>
           <ul className="file-list">
-{searchResults.map(r => (
-  <li key={r.file} className="file-item" onClick={() => openFile(r.file)}>
-    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" style={{marginRight:4}}><rect x="3" y="3" width="10" height="10" rx="2"/></svg>
-    <span style={{fontWeight:600}}>{String(r.file)}</span> {/* Ensure file name is string */}
-    <span style={{color:'#bdbdbd',fontSize:'0.9em',marginLeft:4}}>
-      {String(r.snippet || '')}... {/* Ensure snippet is string */}
-    </span>
-  </li>
-))}
-</ul>
+            {searchResults.map(r => (
+              <li key={r.file} className="file-item" onClick={() => openFile(r.file)}>
+                <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" style={{marginRight:4}}><rect x="3" y="3" width="10" height="10" rx="2"/></svg>
+                <span style={{fontWeight:600}}>{String(r.file)}</span>
+                <span style={{color:'#bdbdbd',fontSize:'0.9em',marginLeft:4}}>
+                  {String(r.snippet || '')}...
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       );
     }
@@ -552,164 +560,6 @@ export default function App() {
               >
                 Git Status
               </button>
-              <button 
-                onClick={() => {
-                  if (showTerminal && terminalRef.current) {
-                    terminalRef.current.writeToTerminal('git add .\r\n');
-                  } else {
-                    setShowTerminal(true);
-                    setTimeout(() => {
-                      if (terminalRef.current) {
-                        terminalRef.current.writeToTerminal('git add .\r\n');
-                      }
-                    }, 200);
-                  }
-                }}
-                style={{
-                  background: '#4fc3f7',
-                  color: '#181a1b',
-                  border: 'none',
-                  borderRadius: 4,
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  fontWeight: 600
-                }}
-              >
-                Git Add All
-              </button>
-              <button 
-                onClick={() => {
-                  const message = prompt('Enter commit message:');
-                  if (message && showTerminal && terminalRef.current) {
-                    terminalRef.current.writeToTerminal(`git commit -m "${message}"\r\n`);
-                  } else if (message) {
-                    setShowTerminal(true);
-                    setTimeout(() => {
-                      if (terminalRef.current) {
-                        terminalRef.current.writeToTerminal(`git commit -m "${message}"\r\n`);
-                      }
-                    }, 200);
-                  }
-                }}
-                style={{
-                  background: '#4fc3f7',
-                  color: '#181a1b',
-                  border: 'none',
-                  borderRadius: 4,
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  fontWeight: 600
-                }}
-              >
-                Git Commit
-              </button>
-              <button 
-                onClick={() => {
-                  if (showTerminal && terminalRef.current) {
-                    terminalRef.current.writeToTerminal('git push\r\n');
-                  } else {
-                    setShowTerminal(true);
-                    setTimeout(() => {
-                      if (terminalRef.current) {
-                        terminalRef.current.writeToTerminal('git push\r\n');
-                      }
-                    }, 200);
-                  }
-                }}
-                style={{
-                  background: '#4fc3f7',
-                  color: '#181a1b',
-                  border: 'none',
-                  borderRadius: 4,
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  fontWeight: 600
-                }}
-              >
-                Git Push
-              </button>
-              <button 
-                onClick={() => {
-                  if (showTerminal && terminalRef.current) {
-                    terminalRef.current.writeToTerminal('git pull\r\n');
-                  } else {
-                    setShowTerminal(true);
-                    setTimeout(() => {
-                      if (terminalRef.current) {
-                        terminalRef.current.writeToTerminal('git pull\r\n');
-                      }
-                    }, 200);
-                  }
-                }}
-                style={{
-                  background: '#4fc3f7',
-                  color: '#181a1b',
-                  border: 'none',
-                  borderRadius: 4,
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  fontWeight: 600
-                }}
-              >
-                Git Pull
-              </button>
-              <button 
-                onClick={() => {
-                  if (showTerminal && terminalRef.current) {
-                    terminalRef.current.writeToTerminal('git log --oneline -10\r\n');
-                  } else {
-                    setShowTerminal(true);
-                    setTimeout(() => {
-                      if (terminalRef.current) {
-                        terminalRef.current.writeToTerminal('git log --oneline -10\r\n');
-                      }
-                    }, 200);
-                  }
-                }}
-                style={{
-                  background: '#4fc3f7',
-                  color: '#181a1b',
-                  border: 'none',
-                  borderRadius: 4,
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  fontWeight: 600
-                }}
-              >
-                Git Log
-              </button>
-              <button 
-                onClick={() => {
-                  const branch = prompt('Enter branch name:');
-                  if (branch && showTerminal && terminalRef.current) {
-                    terminalRef.current.writeToTerminal(`git checkout -b ${branch}\r\n`);
-                  } else if (branch) {
-                    setShowTerminal(true);
-                    setTimeout(() => {
-                      if (terminalRef.current) {
-                        terminalRef.current.writeToTerminal(`git checkout -b ${branch}\r\n`);
-                      }
-                    }, 200);
-                  }
-                }}
-                style={{
-                  background: '#4fc3f7',
-                  color: '#181a1b',
-                  border: 'none',
-                  borderRadius: 4,
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  fontWeight: 600
-                }}
-              >
-                New Branch
-              </button>
             </div>
           </div>
         </div>
@@ -718,9 +568,10 @@ export default function App() {
     return null;
   };
 
+  // This function determines if a file should be previewed in Sandpack.
+  // We've removed the .html check to ensure HTML files are opened in the editor.
   const isVisualPreview = (file, code) => {
     if (!file) return false;
-    if (file.endsWith('.html')) return true;
     if (file.endsWith('.jsx')) return true;
     if (file.endsWith('.js') && /export\s+default\s+function|class|const|let|var/.test(code) && /return\s*\(.*<.*>/.test(code)) return true;
     return false;
@@ -738,7 +589,6 @@ export default function App() {
     </div>
   );
 
-  // Handler functions must be defined before commands array
   const handleGoLive = async () => {
     await saveFile();
     const goLiveRes = await axios.post(`/api/go-live?workspace=${workspace}`);
@@ -757,7 +607,6 @@ export default function App() {
 
   const terminalRef = useRef(null);
 
-  // Restore original Run button logic
   const handleRun = async () => {
     if (!currentFile.endsWith('.js') && !currentFile.endsWith('.jsx') && !currentFile.endsWith('.py') && !currentFile.endsWith('.html')) {
       setRunOutput('Only .js, .jsx, .py, or .html files can be run.');
@@ -774,7 +623,6 @@ export default function App() {
     }
   };
 
-  // Command palette: run file in terminal for .js only
   const runFileInTerminal = async () => {
     if (!currentFile.endsWith('.js')) {
       if (!showTerminal) setShowTerminal(true);
@@ -786,13 +634,11 @@ export default function App() {
     await saveFile();
     if (!showTerminal) setShowTerminal(true);
     const runRes = await axios.post(`/api/run?workspace=${workspace}`, { name: currentFile });
-    // Wait a bit to ensure terminal is mounted
     setTimeout(() => {
       if (terminalRef.current) terminalRef.current.writeToTerminal((runRes.data.output || '') + '\r\n');
     }, 200);
   };
 
-  // List of available commands (now after handlers)
   const commands = [
     { id: 'open-settings', label: 'Open Settings', action: () => setShowSettingsPanel(true) },
     { id: 'go-live', label: 'Go Live', action: handleGoLive },
@@ -807,15 +653,12 @@ export default function App() {
     { id: 'focus-explorer', label: 'Focus File Explorer', action: () => setActiveSidebar('explorer') },
     { id: 'focus-search', label: 'Focus Search', action: () => setActiveSidebar('search') },
     { id: 'focus-source', label: 'Focus Source Control', action: () => setActiveSidebar('source') },
-    // Add more commands as needed
   ];
 
-  // Fuzzy filter commands
   const filteredCommands = commands.filter(cmd =>
     cmd.label.toLowerCase().includes(commandSearch.toLowerCase())
   );
 
-  // Keyboard navigation for command palette
   useEffect(() => {
     if (!showCommandPalette) return;
     const paletteHandler = (e) => {
@@ -844,14 +687,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', paletteHandler);
   }, [showCommandPalette, filteredCommands, commandIndex]);
 
-  // Focus input when palette opens
   useEffect(() => {
     if (showCommandPalette && commandInputRef.current) {
       commandInputRef.current.focus();
     }
   }, [showCommandPalette]);
 
-  // Open palette with Ctrl+Shift+P
   useEffect(() => {
     const globalPaletteHandler = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
@@ -870,14 +711,6 @@ export default function App() {
       setShowMainApp(true);
       console.log('Running in standalone mode');
     }
-    // Check for manifest
-    const manifestEl = document.querySelector('link[rel="manifest"]');
-    if (manifestEl) {
-      console.log('Manifest found:', manifestEl.href);
-    } else {
-      console.warn('Manifest NOT found in index.html!');
-    }
-    // Listen for beforeinstallprompt
     const handler = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -885,7 +718,6 @@ export default function App() {
       console.log('beforeinstallprompt event fired');
     };
     window.addEventListener('beforeinstallprompt', handler);
-    // Listen for appinstalled
     window.addEventListener('appinstalled', () => {
       console.log('App was installed');
       setShowInstallButton(false);
@@ -909,7 +741,31 @@ export default function App() {
     }
   };
 
-  // Close folder menu on click outside
+  const handleNewWorkspace = async () => {
+    try {
+      const response = await axios.post('/api/new-workspace');
+      if (response.data.folder) {
+        const url = `${window.location.origin + window.location.pathname}?workspace=${response.data.folder}`;
+        window.open(url, '_blank');
+      }
+    } catch (error) {
+      console.error('Error creating new workspace:', error);
+    }
+  };
+
+  const handleWorkspaceChange = (newWorkspace) => {
+    setWorkspace(newWorkspace);
+    axios.get(`/api/files?workspace=${newWorkspace}`).then(fileRes => {
+      const filtered = fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]'));
+      setFiles(filtered);
+      setCurrentFile('');
+      setCode('');
+      setOpenTabs([]);
+    }).catch(error => {
+      console.error('Error loading workspace files:', error);
+    });
+  };
+
   useEffect(() => {
     const closeMenu = () => setFolderMenu({ path: null, anchor: null });
     if (folderMenu.path) {
@@ -918,7 +774,6 @@ export default function App() {
     }
   }, [folderMenu]);
 
-  // Close file menu on click outside
   useEffect(() => {
     const closeMenu = () => setFileMenu({ path: null, anchor: null });
     if (fileMenu.path) {
@@ -927,7 +782,6 @@ export default function App() {
     }
   }, [fileMenu]);
 
-  // On mount, check for workspace param
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ws = params.get('workspace');
@@ -937,18 +791,13 @@ export default function App() {
     }
   }, []);
 
-  // Ensure all referenced functions exist (no-op if already defined)
-  // handleAddFile, saveFile, closeTab, handleRun are already defined above
-
   const handleMenuAction = (section, item) => {
     const label = item.label;
   
     switch (section) {
       case 'File':
         switch (true) {
-          case label.startsWith('New File'):
-            handleAddFile();
-            break;
+          case label.startsWith('New File'): handleAddFile(); break;
           case label.startsWith('New Window'):
             axios.post('/api/new-workspace').then(res => {
               if (res.data.folder) {
@@ -957,15 +806,9 @@ export default function App() {
               }
             });
             break;
-          case label.startsWith('Open File'):
-            if (fileInputRef.current) fileInputRef.current.click();
-            break;
-          case label.startsWith('Open Folder'):
-            if (folderInputRef.current) folderInputRef.current.click();
-            break;
-          case label.startsWith('Save'):
-            saveFile();
-            break;
+          case label.startsWith('Open File'): if (fileInputRef.current) fileInputRef.current.click(); break;
+          case label.startsWith('Open Folder'): if (folderInputRef.current) folderInputRef.current.click(); break;
+          case label.startsWith('Save'): saveFile(); break;
           case label.startsWith('Save As'):
             if (currentFile && code !== undefined) {
               const blob = new Blob([code], { type: 'text/plain' });
@@ -977,15 +820,9 @@ export default function App() {
               document.body.removeChild(a);
             }
             break;
-          case label.startsWith('Close Editor'):
-            if (currentFile) closeTab(currentFile, { stopPropagation: () => {} });
-            break;
-          case label.startsWith('Exit'):
-            window.close();
-            break;
-          case label.startsWith('Auto Save'):
-            setAutoSave((prev) => !prev);
-            break;
+          case label.startsWith('Close Editor'): if (currentFile) closeTab(currentFile, { stopPropagation: () => {} }); break;
+          case label.startsWith('Exit'): window.close(); break;
+          case label.startsWith('Auto Save'): setAutoSave((prev) => !prev); break;
           case label.startsWith('Open Recent'):
             if (recentFiles.length === 0) {
               showNotification('No recent files.');
@@ -996,33 +833,19 @@ export default function App() {
               }
             }
             break;
-          case label.startsWith('Preferences'):
-            setShowPreferences(true);
-            break;
-          default:
-            showNotification(`Action for 'File > ${label}' not implemented yet.`);
+          case label.startsWith('Preferences'): setShowPreferences(true); break;
+          default: showNotification(`Action for 'File > ${label}' not implemented yet.`);
         }
         return;
   
       case 'Edit':
         switch (label) {
-          case 'Undo':
-            document.execCommand('undo');
-            break;
-          case 'Redo':
-            document.execCommand('redo');
-            break;
-          case 'Cut':
-            document.execCommand('cut');
-            break;
-          case 'Copy':
-            document.execCommand('copy');
-            break;
-          case 'Paste':
-            document.execCommand('paste');
-            break;
-          default:
-            showNotification(`Action for 'Edit > ${label}' not implemented yet.`);
+          case 'Undo': document.execCommand('undo'); break;
+          case 'Redo': document.execCommand('redo'); break;
+          case 'Cut': document.execCommand('cut'); break;
+          case 'Copy': document.execCommand('copy'); break;
+          case 'Paste': document.execCommand('paste'); break;
+          default: showNotification(`Action for 'Edit > ${label}' not implemented yet.`);
         }
         return;
   
@@ -1031,37 +854,6 @@ export default function App() {
           document.execCommand('selectAll');
         } else {
           showNotification(`Action for 'Selection > ${label}' not implemented yet.`);
-        }
-        return;
-  
-      case 'Components':
-        switch (label) {
-          case 'Add Component':
-          case 'Remove Component':
-          case 'Rename Component':
-          case 'Component Settings':
-          case 'Show Component Tree':
-          case 'Export Component':
-            showNotification(`${label} action triggered!`);
-            break;
-          default:
-            showNotification(`Action for 'Components > ${label}' not implemented yet.`);
-        }
-        return;
-  
-      case 'Help':
-        switch (label) {
-          case 'Welcome':
-            showNotification('Welcome to the app!');
-            break;
-          case 'Show All Commands':
-            showNotification('Show All Commands dialog not implemented yet.');
-            break;
-          case 'About':
-            showNotification('About: This is the CLICKK editor.');
-            break;
-          default:
-            showNotification(`Action for 'Help > ${label}' not implemented yet.`);
         }
         return;
   
@@ -1075,38 +867,9 @@ export default function App() {
               return [...prev, { id: newId }];
             });
             break;
-          case 'Split Terminal':
-            setTerminals(prev => {
-              // If only one terminal, add a second; if two, do nothing (or allow more if desired)
-              if (prev.length < 2) {
-                const newId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 1;
-                setActiveTerminal(newId);
-                return [...prev, { id: newId }];
-              }
-              return prev;
-            });
-            setShowTerminal(true);
-            break;
-          case 'Run Task':
-            handleRun();
-            break;
-          case 'Run Build Task':
-          case 'Restart Task':
-          case 'Terminate Task':
-          case 'Configure Tasks':
-          case 'Configure Default Build Task':
-          case 'Show Running Tasks':
-          case 'Toggle Output':
-            showNotification(`${label} not implemented yet.`);
-            break;
-          case 'Run Active File':
-            handleRun();
-            break;
-          case 'Toggle Terminal':
-            setShowTerminal(s => !s);
-            break;
-          default:
-            showNotification(`Action for 'Terminal > ${label}' not implemented yet.`);
+          case 'Run Active File': handleRun(); break;
+          case 'Toggle Terminal': setShowTerminal(s => !s); break;
+          default: showNotification(`Action for 'Terminal > ${label}' not implemented yet.`);
         }
         return;
   
@@ -1115,12 +878,10 @@ export default function App() {
     }
   };
   
-  // Handle mouse events for resizing terminal
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (!isResizingRef.current || !terminalContainerRef.current) return;
-      const rect = terminalContainerRef.current.getBoundingClientRect();
-      const newHeight = Math.max(100, window.innerHeight - e.clientY - 36); // 36 = status bar height
+      const newHeight = Math.max(100, window.innerHeight - e.clientY - 36);
       setTerminalHeight(newHeight);
     };
     const handleMouseUp = () => {
@@ -1134,7 +895,6 @@ export default function App() {
     };
   }, []);
 
-  // Initialize first terminal when terminal is opened
   useEffect(() => {
     if (showTerminal && terminals.length === 0) {
       setTerminals([{ id: 1 }]);
@@ -1142,12 +902,10 @@ export default function App() {
     }
   }, [showTerminal]);
 
-  // Ensure activeTerminal is set when terminals exist
   useEffect(() => {
     if (terminals.length > 0 && !activeTerminal) {
       setActiveTerminal(terminals[0].id);
     }
-    // Also handle case where activeTerminal no longer exists
     if (activeTerminal && !terminals.find(t => t.id === activeTerminal)) {
       if (terminals.length > 0) {
         setActiveTerminal(terminals[0].id);
@@ -1163,23 +921,16 @@ export default function App() {
 
   return (
     <div className="app-root" style={{background:'#181a1b', color:'#fff', minHeight:'100vh'}}>
-      {/* Folder input for Open Folder... */}
       <input
         type="file"
         ref={folderInputRef}
         style={{ display: 'none' }}
         webkitdirectory="true"
-        mozdirectory="true"
-        msdirectory="true"
-        odirectory="true"
-        directory="true"
         onChange={async (e) => {
           const filesArr = Array.from(e.target.files);
           if (filesArr.length > 0) {
-            const newFiles = [];
             for (const file of filesArr) {
               const text = await file.text();
-              newFiles.push(file.webkitRelativePath || file.name);
               setFiles((prev) => prev.includes(file.webkitRelativePath || file.name) ? prev : [...prev, file.webkitRelativePath || file.name]);
               setOpenTabs((prev) => prev.includes(file.webkitRelativePath || file.name) ? prev : [...prev, file.webkitRelativePath || file.name]);
               setCode(text);
@@ -1191,18 +942,15 @@ export default function App() {
         }}
         multiple
       />
-      {/* Show Download button only if install is available */}
       {showInstallButton && deferredPrompt && (
         <button onClick={handleInstallClick} style={{position: 'fixed', top: 16, right: 16, zIndex: 1000, padding: '10px 20px', background: '#181a1b', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.2)'}}>Download App</button>
       )}
-      {/* Fallback message if install is not available and not running as PWA */}
       {!showInstallButton && !window.matchMedia('(display-mode: standalone)').matches && (
         <div style={{position: 'fixed', top: 16, right: 16, zIndex: 1000, color: '#fff', background: '#333', padding: 10, borderRadius: 6}}>
           To install, use your browser's install or Add to Home Screen option.
         </div>
       )}
       <div className="topbar">
-        
         <Topbar onMenuAction={handleMenuAction} autoSave={autoSave} />
       </div>
       <div className="main-content" style={{display:'flex', height:'calc(100vh - 48px)'}}>
@@ -1210,48 +958,51 @@ export default function App() {
           {SIDEBAR_ICONS.filter(icon => icon.key !== 'settings').map(icon => (
             <div
               key={icon.key}
-              className={`sidebar-icon${activeSidebar === icon.key ? ' active' : ''}`}
+              className={`sidebar-icon${(activeSidebar === icon.key && icon.key !== 'ai') || (icon.key === 'ai' && isAIAssistantVisible) ? ' active' : ''}`}
               title={icon.title}
               onClick={() => {
-                if (icon.key === 'explorer') {
-                  if (activeSidebar === 'explorer' && explorerOpen) {
-                    setExplorerOpen(false);
-                    return;
+                if (icon.key === 'ai') {
+                  setIsAIAssistantVisible(v => !v);
+                } else {
+                  if (icon.key === 'explorer') {
+                    if (activeSidebar === 'explorer' && explorerOpen) {
+                      setExplorerOpen(false);
+                      return;
+                    } else {
+                      setExplorerOpen(true);
+                    }
                   } else {
                     setExplorerOpen(true);
                   }
-                } else {
-                  setExplorerOpen(true);
+                  setActiveSidebar(icon.key);
+                  setShowSettings(false);
+                  if (icon.key === 'terminal') setShowTerminal(true);
                 }
-                setActiveSidebar(icon.key);
-                setShowSettings(false);
-                if (icon.key === 'terminal') setShowTerminal(true);
               }}
             >
               {icon.svg}
             </div>
           ))}
-            {/* Move settings icon up for visibility */}
-            <div style={{ flex: 1 }} />
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 40 }}>
-              <div
-                className={`sidebar-icon${activeSidebar === 'settings' ? ' active' : ''}`}
-                title="Settings"
-                onClick={() => {
-                  setActiveSidebar('settings');
-                  setShowSettings(s => !s);
-                }}
-              >
-                {SIDEBAR_ICONS.find(icon => icon.key === 'settings').svg}
-              </div>
-              <img src="/icon.png" alt="User" style={{ width: 32, height: 32, borderRadius: 8, marginTop: 16, border: '1.5px solid #333', background: '#23272e' }} />
+          <div style={{ flex: 1 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 40 }}>
+            <div
+              className={`sidebar-icon${activeSidebar === 'settings' ? ' active' : ''}`}
+              title="Settings"
+              onClick={() => {
+                setActiveSidebar('settings');
+                setShowSettings(s => !s);
+              }}
+            >
+              {SIDEBAR_ICONS.find(icon => icon.key === 'settings').svg}
             </div>
-            {showSettings && renderSettingsMenu()}
+            <img src="/icon.png" alt="User" style={{ width: 32, height: 32, borderRadius: 8, marginTop: 16, border: '1.5px solid #333', background: '#23272e' }} />
           </div>
-        {/* Only show explorer panel if explorerOpen and activeSidebar is explorer */}
-        {activeSidebar === 'explorer' && explorerOpen && renderSidebarPanel()}
-        {activeSidebar !== 'explorer' && renderSidebarPanel()}
-        <div className="editor-preview-container" style={{flex:1, display:'flex', flexDirection:'column', background:'#23272e'}}>
+          {showSettings && renderSettingsMenu()}
+        </div>
+        
+        {renderSidebarPanel()}
+
+        <div className="editor-preview-container" style={{flex:1, display:'flex', flexDirection:'column', background:'#23272e', minWidth: 0}}>
           <div className="editor-area" style={{flex:1, background:'#23272e', display:'flex', flexDirection:'column'}}>
             <div className="tabbar">
               {openTabs.map(f => (
@@ -1261,67 +1012,40 @@ export default function App() {
                   onClick={() => openFile(f)}
                   style={{ display: 'flex', alignItems: 'center' }}
                 >
-                 <span style={{ marginRight: 4, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                   {f.endsWith('/') ? (
-                     <img src="/folder2.png" alt="Folder" style={{ width: 16, height: 16 }} />
-                   ) : (
-                     <img src={getFileIcon(f)} alt={getFileExtension(f) + ' file'} style={{ width: 16, height: 16 }} />
-                   )}
-                 </span>
+                  <span style={{ marginRight: 4, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <img src={getFileIcon(f)} alt={getFileExtension(f) + ' file'} style={{ width: 16, height: 16 }} />
+                  </span>
                   {f}
-                  <span
-                    className="close"
-                    onClick={e => closeTab(f, e)}
-                  >×</span>
+                  <span className="close" onClick={e => closeTab(f, e)}>×</span>
                 </div>
               ))}
             </div>
             <div style={{flex:1, display:'flex', flexDirection:'column', background:'#23272e'}}>
               {currentFile && currentFile.endsWith('.html') ? (
-                <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-                  <div style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-                    <MonacoEditor
-                      height="100%"
-                      language="html"
-                      value={code || ''}
-                      onChange={(value) => setCode(value || '')}
-                      theme="vs-dark"
-                      options={{
-                        minimap: { enabled: false },
-                        fontSize: 14,
-                        lineHeight: 20,
-                        wordWrap: 'on',
-                        scrollBeyondLastLine: false,
-                        automaticLayout: true,
-                        tabSize: 2,
-                        insertSpaces: true,
-                        formatOnType: true,
-                        formatOnSave: true,
-                        autoClosingBrackets: 'always',
-                        autoClosingQuotes: 'always',
-                        autoClosingDoubleQuotes: 'always',
-                        autoClosingTripleQuotes: 'always',
-                        suggestOnTriggerCharacters: true,
-                        quickSuggestions: true,
-                        background: '#23272e',
-                      }}
-                    />
-                  </div>
-                  {/* Removed Sandpack and iframe preview for HTML files */}
-                </div>
+                  <MonacoEditor
+                    height="100%"
+                    language="html"
+                    value={code || ''}
+                    onChange={(value) => setCode(value || '')}
+                    theme="vs-dark"
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 14,
+                      lineHeight: 20,
+                      wordWrap: 'on',
+                      scrollBeyondLastLine: false,
+                      automaticLayout: true,
+                      tabSize: 2,
+                      insertSpaces: true,
+                      background: '#23272e',
+                    }}
+                  />
               ) : isVisualPreview(currentFile, code) ? (
                 <Sandpack
                   template="react"
                   theme="dark"
-                  files={{
-                    '/App.js': {
-                      code: code
-                    }
-                  }}
-                  options={{
-                    visibleFiles: ['/App.js'],
-                    activeFile: '/App.js'
-                  }}
+                  files={{ '/App.js': { code: code } }}
+                  options={{ visibleFiles: ['/App.js'], activeFile: '/App.js' }}
                 />
               ) : (
                 <MonacoEditor
@@ -1340,26 +1064,17 @@ export default function App() {
                     automaticLayout: true,
                     tabSize: 2,
                     insertSpaces: true,
-                    formatOnType: true,
-                    formatOnSave: true,
-                    autoClosingBrackets: 'always',
-                    autoClosingQuotes: 'always',
-                    autoClosingDoubleQuotes: 'always',
-                    autoClosingTripleQuotes: 'always',
-                    suggestOnTriggerCharacters: true,
-                    quickSuggestions: true,
                     background: '#23272e',
                   }}
                 />
               )}
             </div>
           </div>
-          {/* Output/Terminal tab switcher and panel with vertical resizing */}
           {showTerminal && (
-            <div
+            <div 
               ref={terminalContainerRef}
-              style={{
-                height: terminalHeight,
+              style={{ 
+                height: terminalHeight, 
                 background: '#181a1b',
                 borderTop: '1px solid #333',
                 color: '#fff',
@@ -1372,7 +1087,6 @@ export default function App() {
                 flexDirection: 'column',
               }}
             >
-              {/* Resizer bar (move above the tab bar for better UX) */}
               <div
                 style={{
                   height: 6,
@@ -1384,11 +1098,8 @@ export default function App() {
                   right: 0,
                   zIndex: 10,
                 }}
-                onMouseDown={() => {
-                  isResizingRef.current = true;
-                }}
+                onMouseDown={() => { isResizingRef.current = true; }}
               />
-              {/* Tab bar */}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1397,7 +1108,7 @@ export default function App() {
                 height: 36,
                 zIndex: 3,
                 position: 'relative',
-                marginTop: 6, // To account for the resizer bar
+                marginTop: 6,
               }}>
                 <button
                   onClick={() => setActiveBottomTab('terminal')}
@@ -1427,304 +1138,27 @@ export default function App() {
                     cursor: 'pointer',
                   }}
                 >Output</button>
-                {/* Add terminal (+) button, right-aligned */}
-                <div style={{ flex: 1 }} />
-                <button
-                  onClick={() => {
-                    setShowTerminal(true);
-                    if (terminals.length === 0) {
-                      // Create first terminal
-                      setTerminals([{ id: 1 }]);
-                      setActiveTerminal(1);
-                    } else {
-                      // Create additional terminal
-                      const newId = Math.max(...terminals.map(t => t.id)) + 1;
-                      setTerminals(prev => [...prev, { id: newId }]);
-                      setActiveTerminal(newId);
-                    }
-                  }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#fff',
-                    fontSize: 20,
-                    cursor: 'pointer',
-                    marginRight: 8,
-                    marginLeft: 4,
-                    padding: 0,
-                    width: 28,
-                    height: 28,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: 4,
-                    transition: 'background 0.15s',
-                  }}
-                  title="New Terminal"
-                >
-                  <span style={{fontSize: 22, fontWeight: 600, lineHeight: 1}}>+</span>
-                </button>
-                {/* Split terminal button */}
-                <button
-                  onClick={() => {
-                    setShowTerminal(true);
-                    // Create split view with two terminals side by side
-                    const leftTerminalId = terminals.length > 0 ? Math.max(...terminals.map(t => t.id)) + 1 : 1;
-                    const rightTerminalId = leftTerminalId + 1;
-                    
-                    setTerminals(prev => [
-                      ...prev, 
-                      { id: leftTerminalId, position: 'left' },
-                      { id: rightTerminalId, position: 'right' }
-                    ]);
-                    // Set active terminal to the left split terminal
-                    setActiveTerminal(leftTerminalId);
-                  }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#fff',
-                    fontSize: 16,
-                    cursor: 'pointer',
-                    marginRight: 8,
-                    padding: 0,
-                    width: 28,
-                    height: 28,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: 4,
-                    transition: 'background 0.15s',
-                  }}
-                  title="Split Terminal"
-                >
-                  <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M3 3h18v18H3V3zm2 2v14h14V5H5zm2 2h4v10H7V7zm6 0h4v10h-4V7z"/>
-                  </svg>
-                </button>
-                {/* Close button */}
-                <button
-                  onClick={() => {
-                    // Check if we're in split view (visible split terminals)
-                    const hasSplitTerminals = terminals.some(t => t.position && !t.hidden);
-                    
-                    if (hasSplitTerminals) {
-                      // In split view - close only the split terminals, keep other terminals
-                      console.log('Current terminals:', terminals);
-                      console.log('Split terminals detected:', terminals.filter(t => t.position));
-                      console.log('Regular terminals:', terminals.filter(t => !t.position));
-                      console.log('Active terminal:', activeTerminal);
-                      
-                      if (window.confirm('Close split terminals? This will stop any running processes in the split view.')) {
-                        // Get current terminals before filtering
-                        const currentTerminals = [...terminals];
-                        const splitTerminals = currentTerminals.filter(t => t.position && !t.hidden);
-                        const regularTerminals = currentTerminals.filter(t => !t.position && !t.hidden);
-                        
-                        console.log('Deleting split terminals:', splitTerminals.map(t => t.id));
-                        console.log('Keeping regular terminals:', regularTerminals.map(t => t.id));
-                        
-                        // Remove only split terminals, preserve existing regular terminals
-                        console.log('Before deletion - terminals:', terminals);
-                        
-                        // Keep only the regular terminals (without position property and not hidden)
-                        const updatedTerminals = terminals.filter(t => !t.position && !t.hidden);
-                        console.log('After deletion - terminals:', updatedTerminals);
-                        console.log('Regular terminals that should be preserved:', regularTerminals);
-                        
-                        // Verify we're keeping the same regular terminals
-                        const preservedTerminals = regularTerminals.map(t => ({ id: t.id, preserved: true }));
-                        console.log('Preserved terminal IDs:', preservedTerminals.map(t => t.id));
-                        
-                        // Instead of deleting split terminals, mark them as hidden to preserve connections
-                        setTerminals(prev => {
-                          console.log('Previous terminals in setState:', prev);
-                                                  const updatedTerminals = prev.map(t => {
-                          if (t.position && !t.hidden) {
-                            // Mark split terminals as hidden instead of deleting them
-                            return { ...t, hidden: true };
-                          }
-                          return t;
-                        });
-                          console.log('Updated terminals (split terminals hidden):', updatedTerminals);
-                          
-                          return updatedTerminals;
-                        });
-                        
-                        // Set active terminal to first regular terminal, or null if none
-                        if (updatedTerminals.length > 0) {
-                          const firstRegularTerminal = updatedTerminals[0].id;
-                          console.log('Setting active terminal to:', firstRegularTerminal);
-                          setActiveTerminal(firstRegularTerminal);
-                        } else {
-                          // If no regular terminals left, close the panel
-                          console.log('No regular terminals left, closing panel');
-                          setShowTerminal(false);
-                          setActiveTerminal(null);
-                        }
-                      }
-                    } else if (terminals.length > 1) {
-                      // Multiple regular terminals - delete only the active terminal
-                      if (window.confirm(`Delete terminal ${activeTerminal}? This will stop any running processes.`)) {
-                        setTerminals(prev => {
-                          const remaining = prev.filter(t => t.id !== activeTerminal);
-                          if (remaining.length > 0) {
-                            setActiveTerminal(remaining[0].id);
-                          }
-                          return remaining;
-                        });
-                      }
-                    } else {
-                      // Single terminal - close the entire panel
-                      if (window.confirm('Close terminal panel? This will stop any running processes.')) {
-                        setShowTerminal(false);
-                        setTerminals([]);
-                        setActiveTerminal(null);
-                      }
-                    }
-                  }}
-                  style={{
-                    background: 'none',
-                    color: '#fff',
-                    border: 'none',
-                    fontSize: 16,
-                    cursor: 'pointer',
-                    opacity: 0.7,
-                    height: '100%',
-                    width: 28,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginRight: 8,
-                  }}
-                  title={terminals.some(t => t.position) ? "Close Split Terminals" : (terminals.length > 1 ? "Delete Active Terminal" : "Close Terminal Panel")}
-                >
-                  <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                  </svg>
-                </button>
               </div>
-              {/* Panel content */}
               <div style={{ flex: 1, overflow: 'auto', width: '100%', display: 'flex' }}>
                 {activeBottomTab === 'terminal' ? (
-                  <div style={{ display: 'flex', height: '100%', width: '100%' }}>
-                    {/* Main terminal area */}
-                    <div style={{ flex: 1, position: 'relative' }}>
-                      {terminals.length > 0 ? (
-                        // Always render all terminals, but show/hide based on state
-                        <div style={{ height: '100%', width: '100%' }}>
-                          {/* Render all regular terminals (always present) */}
-                          {terminals.filter(t => !t.position).map((term, idx) => (
-                            <div 
-                              key={term.id} 
-                              style={{ 
-                                display: (activeTerminal === term.id && !terminals.some(t => t.position && !t.hidden)) ? 'block' : 'none',
-                                height: '100%',
-                                width: '100%'
-                              }}
-                            >
-                              <TerminalPanel 
-                                ref={activeTerminal === term.id ? terminalRef : null} 
-                                workspace={workspace}
-                                onProjectCreated={() => {
-                                  axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
-                                    setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
-                                  });
-                                }} 
-                              />
-                            </div>
-                          ))}
-                          
-                          {/* Render split terminals when visible */}
-                          {terminals.some(t => t.position && !t.hidden) && (
-                            <div style={{ display: 'flex', height: '100%', width: '100%' }}>
-                              {terminals.filter(t => t.position && !t.hidden).map((term, idx) => (
-                                <div 
-                                  key={term.id} 
-                                  style={{ 
-                                    flex: 1,
-                                    height: '100%',
-                                    borderRight: term.position === 'left' ? '1px solid #333' : 'none'
-                                  }}
-                                >
-                                  <TerminalPanel 
-                                    workspace={workspace}
-                                    onProjectCreated={() => {
-                                      axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
-                                        setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
-                                      });
-                                    }} 
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div style={{ height: '100%', width: '100%' }}>
-                          <TerminalPanel 
-                            ref={terminalRef} 
-                            workspace={workspace}
-                            onProjectCreated={() => {
-                              axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
-                                setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
-                              });
-                            }} 
-                          />
-                        </div>
-                      )}
-                    </div>
-                    {/* Terminal tabs on the right - show when multiple terminals or visible split terminals */}
-                    {(terminals.filter(t => !t.hidden).length > 1 || terminals.some(t => t.position && !t.hidden)) && (
-                      <div style={{ 
-                        width: 40, 
-                        background: '#23272e', 
-                        borderLeft: '1px solid #333',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        paddingTop: 8
-                      }}>
-                        {terminals.filter(t => !t.hidden).map((term, idx) => (
-                          <button
-                            key={term.id}
-                            onClick={() => setActiveTerminal(term.id)}
-                            style={{
-                              width: 32,
-                              height: 32,
-                              margin: '2px 0',
-                              background: activeTerminal === term.id ? '#4fc3f7' : 'transparent',
-                              border: '1px solid #333',
-                              borderRadius: 4,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: activeTerminal === term.id ? '#181a1b' : '#fff',
-                              fontSize: 12,
-                              position: 'relative'
-                            }}
-                            title={`Terminal ${idx + 1}${term.position ? ` (${term.position})` : ''}`}
-                          >
-                            <span style={{ fontSize: 14 }}>›_</span>
-                            {/* Removed the close button - trash can in tab bar handles deletion */}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                  <div style={{ height: '100%', width: '100%' }}>
+                    <TerminalPanel 
+                      ref={terminalRef} 
+                      workspace={workspace}
+                      onProjectCreated={() => {
+                        axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
+                          setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
+                        });
+                      }} 
+                    />
                   </div>
                 ) : (
-                  <div style={{
+                  <div style={{ 
                     background: '#111',
                     color: '#fff',
                     fontFamily: 'Fira Mono, monospace',
                     fontSize: '1rem',
                     padding: '10px 16px',
-                    minHeight: '60px',
-                    maxHeight: '100%',
-                    overflow: 'auto',
-                    borderRadius: '4px',
-                    margin: '0',
                     height: '100%',
                   }}>
                     <strong>Output:</strong>
@@ -1735,8 +1169,19 @@ export default function App() {
             </div>
           )}
         </div>
+        {isAIAssistantVisible && (
+          <div style={{ width: '400px', flexShrink: 0, borderLeft: '1px solid #333', display: 'flex', flexDirection: 'column' }}>
+            <AIAssistant
+              currentFile={currentFile}
+              currentCode={code}
+              workspace={workspace}
+              onCodeChange={setCode}
+              onFileCreate={handleFileCreate}
+              onFileOpen={openFile}
+            />
+          </div>
+        )}
       </div>
-      {/* Bottom status bar with Go Live/Stop Live */}
       <div style={{
         position: 'fixed',
         left: 0,
@@ -1791,7 +1236,6 @@ export default function App() {
           Stop Live
         </button>
       </div>
-      {/* Settings Panel Modal */}
       {showSettingsPanel && (
         <div style={{
           position: 'fixed',
@@ -1828,16 +1272,10 @@ export default function App() {
               </select>
               <span style={{marginLeft:8, color:'#888', fontSize:'0.95em'}}>(coming soon)</span>
             </div>
-            <div style={{marginBottom:16}}>
-              <label style={{fontWeight:600}}>Font Size:</label>
-              <input type="number" min="10" max="32" value={14} style={{marginLeft:12, width:48, padding:4, borderRadius:4, background:'#181a1b', color:'#fff', border:'1px solid #333'}} disabled />
-              <span style={{marginLeft:8, color:'#888', fontSize:'0.95em'}}>(coming soon)</span>
-            </div>
             <button onClick={() => setShowSettingsPanel(false)} style={{position:'absolute', top:12, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
           </div>
         </div>
       )}
-      {/* Command Palette Modal (fully functional) */}
       {showCommandPalette && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.45)', zIndex: 2000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
@@ -1852,9 +1290,6 @@ export default function App() {
               style={{width:'100%',padding:16,border:'none',outline:'none',background:'#181a1b',color:'#fff',fontSize:'1.15rem',boxSizing:'border-box'}}
             />
             <div style={{maxHeight: 320, overflowY: 'auto'}}>
-              {filteredCommands.length === 0 && (
-                <div style={{padding: '18px 24px', color:'#888'}}>No matching commands</div>
-              )}
               {filteredCommands.map((cmd, i) => (
                 <div
                   key={cmd.id}
@@ -1866,7 +1301,6 @@ export default function App() {
                     cursor: 'pointer',
                     fontSize: '1.08rem',
                     borderBottom: '1px solid #222',
-                    transition: 'background 0.15s',
                   }}
                   onMouseEnter={() => setCommandIndex(i)}
                   onClick={() => {
@@ -1882,61 +1316,6 @@ export default function App() {
             </div>
             <button onClick={() => setShowCommandPalette(false)} style={{position:'absolute', top:10, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
           </div>
-        </div>
-      )}
-      {/* Extensions Modal */}
-      {showExtensionsPanel && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.45)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', }} onClick={() => setShowExtensionsPanel(false)}>
-          <div style={{ background: '#23272e', color: '#fff', borderRadius: 10, minWidth: 400, minHeight: 120, padding: 32, boxShadow: '0 4px 32px #0008', position: 'relative' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{marginTop:0, marginBottom:16}}>Extensions</h2>
-            <div style={{color:'#888'}}>Extensions management coming soon!</div>
-            <button onClick={() => setShowExtensionsPanel(false)} style={{position:'absolute', top:12, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
-          </div>
-        </div>
-      )}
-      {/* Keyboard Shortcuts Modal */}
-      {showShortcutsPanel && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.45)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', }} onClick={() => setShowShortcutsPanel(false)}>
-          <div style={{ background: '#23272e', color: '#fff', borderRadius: 10, minWidth: 400, minHeight: 120, padding: 32, boxShadow: '0 4px 32px #0008', position: 'relative' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{marginTop:0, marginBottom:16}}>Keyboard Shortcuts</h2>
-            <div style={{color:'#888'}}>Shortcuts list coming soon!</div>
-            <button onClick={() => setShowShortcutsPanel(false)} style={{position:'absolute', top:12, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
-          </div>
-        </div>
-      )}
-      {/* User Snippets Modal */}
-      {showSnippetsPanel && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.45)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', }} onClick={() => setShowSnippetsPanel(false)}>
-          <div style={{ background: '#23272e', color: '#fff', borderRadius: 10, minWidth: 400, minHeight: 120, padding: 32, boxShadow: '0 4px 32px #0008', position: 'relative' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{marginTop:0, marginBottom:16}}>User Snippets</h2>
-            <div style={{color:'#888'}}>Snippets management coming soon!</div>
-            <button onClick={() => setShowSnippetsPanel(false)} style={{position:'absolute', top:12, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
-          </div>
-        </div>
-      )}
-      {/* Themes Modal */}
-      {showThemesPanel && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.45)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', }} onClick={() => setShowThemesPanel(false)}>
-          <div style={{ background: '#23272e', color: '#fff', borderRadius: 10, minWidth: 400, minHeight: 120, padding: 32, boxShadow: '0 4px 32px #0008', position: 'relative' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{marginTop:0, marginBottom:16}}>Themes</h2>
-            <div style={{color:'#888'}}>Theme selection coming soon!</div>
-            <button onClick={() => setShowThemesPanel(false)} style={{position:'absolute', top:12, right:16, background:'none', color:'#fff', border:'none', fontSize:22, cursor:'pointer'}}>×</button>
-          </div>
-        </div>
-      )}
-      {/* Preferences Modal */}
-      {showPreferences && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#222', color: '#fff', padding: 32, borderRadius: 8, minWidth: 300 }}>
-            <h2>Preferences</h2>
-            <p>Preferences UI coming soon!</p>
-            <button onClick={() => setShowPreferences(false)} style={{ marginTop: 16 }}>Close</button>
-          </div>
-        </div>
-      )}
-      {notification && (
-        <div style={{ position: 'fixed', bottom: 20, right: 20, background: '#222', color: '#fff', padding: '12px 24px', borderRadius: 8, zIndex: 3000 }}>
-          {notification}
         </div>
       )}
     </div>

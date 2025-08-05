@@ -1,0 +1,227 @@
+const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+
+class AIService {
+  constructor() {
+    this.providers = {
+      perplexity: {
+        name: 'Perplexity',
+        apiKey: process.env.PERPLEXITY_API_KEY,
+        baseURL: 'https://api.perplexity.ai/chat/completions',
+        model: 'sonar-pro'
+      },
+      gemini: {
+        name: 'Gemini',
+        apiKey: process.env.GEMINI_API_KEY,
+        baseURL: 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent',
+        model: 'gemini-1.5-flash'
+      }
+    };
+  }
+
+  async callPerplexity(message, context) {
+    try {
+      const response = await axios.post(this.providers.perplexity.baseURL, {
+        model: this.providers.perplexity.model,
+        messages: [
+          {
+            role: 'system',
+            content: this.buildSystemPrompt(context)
+          },
+          {
+            role: 'user',
+            content: message
+          }
+        ],
+        max_tokens: 2000,
+        temperature: 0.7
+      }, {
+        headers: {
+          'Authorization': `Bearer ${this.providers.perplexity.apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      return {
+        success: true,
+        response: response.data.choices[0].message.content,
+        codeChanges: this.extractCodeChanges(response.data.choices[0].message.content),
+        suggestions: this.extractSuggestions(response.data.choices[0].message.content)
+      };
+    } catch (error) {
+      console.error('Perplexity API error:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: 'Failed to get response from Perplexity'
+      };
+    }
+  }
+
+  async callGemini(message, context) {
+    try {
+      const response = await axios.post(
+        `${this.providers.gemini.baseURL}?key=${this.providers.gemini.apiKey}`,
+        {
+          contents: [
+            {
+              parts: [
+                {
+                  text: this.buildSystemPrompt(context) + '\n\nUser: ' + message
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            maxOutputTokens: 2000,
+            temperature: 0.7
+          }
+        }
+      );
+
+      return {
+        success: true,
+        response: response.data.candidates[0].content.parts[0].text,
+        codeChanges: this.extractCodeChanges(response.data.candidates[0].content.parts[0].text),
+        suggestions: this.extractSuggestions(response.data.candidates[0].content.parts[0].text)
+      };
+    } catch (error) {
+      console.error('Gemini API error:', error.response?.data || error.message);
+      return {
+        success: false,
+        error: 'Failed to get response from Gemini'
+      };
+    }
+  }
+
+  buildSystemPrompt(context) {
+    const { currentFile, currentCode, workspace } = context;
+    
+    let prompt = `You are an intelligent AI coding assistant, similar to GitHub Copilot or Cursor's AI. You help developers with code analysis, suggestions, and improvements.
+
+Current context:
+- Workspace: ${workspace}
+- Current file: ${currentFile || 'None'}
+${currentCode ? `- Current code:\n\`\`\`\n${currentCode}\n\`\`\`` : ''}
+
+Your capabilities:
+1. Analyze code and provide suggestions
+2. Explain code concepts and patterns
+3. Suggest improvements and optimizations
+4. Help with debugging issues
+5. Provide code examples and snippets
+6. Answer questions about programming languages and frameworks
+
+When suggesting code changes, use this format:
+\`\`\`code-changes
+[{"type": "modify", "file": "filename.js", "newContent": "updated code here"}]
+\`\`\`
+
+When providing suggestions, use this format:
+\`\`\`suggestions
+["Suggestion 1", "Suggestion 2", "Suggestion 3"]
+\`\`\`
+
+Be helpful, concise, and focus on practical solutions. Always consider the current file context when providing suggestions.`;
+
+    return prompt;
+  }
+
+  extractCodeChanges(response) {
+    const codeChangesMatch = response.match(/```code-changes\n([\s\S]*?)\n```/);
+    if (codeChangesMatch) {
+      try {
+        return JSON.parse(codeChangesMatch[1]);
+      } catch (error) {
+        console.error('Failed to parse code changes:', error);
+        return [];
+      }
+    }
+    return [];
+  }
+
+  extractSuggestions(response) {
+    const suggestionsMatch = response.match(/```suggestions\n([\s\S]*?)\n```/);
+    if (suggestionsMatch) {
+      try {
+        return JSON.parse(suggestionsMatch[1]);
+      } catch (error) {
+        console.error('Failed to parse suggestions:', error);
+        return [];
+      }
+    }
+    return [];
+  }
+
+  async processMessage(message, agent, context) {
+    // Remove the code-changes and suggestions sections from the response
+    const cleanResponse = (response) => {
+      return response
+        .replace(/```code-changes\n[\s\S]*?\n```/g, '')
+        .replace(/```suggestions\n[\s\S]*?\n```/g, '')
+        .trim();
+    };
+
+    try {
+      let result;
+      
+      switch (agent) {
+        case 'perplexity':
+          if (!this.providers.perplexity.apiKey) {
+            return { success: false, error: 'Perplexity API key not configured' };
+          }
+          result = await this.callPerplexity(message, context);
+          break;
+        case 'gemini':
+          if (!this.providers.gemini.apiKey) {
+            return { success: false, error: 'Gemini API key not configured' };
+          }
+          result = await this.callGemini(message, context);
+          break;
+        case 'auto':
+        default:
+          // Try providers in order: Perplexity, Gemini
+          const providers = ['perplexity', 'gemini'];
+          for (const provider of providers) {
+            if (this.providers[provider].apiKey) {
+              const methodName = `call${provider.charAt(0).toUpperCase()}${provider.slice(1)}`;
+              result = await this[methodName](message, context);
+              if (result.success) break;
+            }
+          }
+          if (!result || !result.success) {
+            return { success: false, error: 'No AI providers configured. Please add API keys to your environment variables.' };
+          }
+          break;
+      }
+
+      if (result.success) {
+        result.response = cleanResponse(result.response);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('AI service error:', error);
+      return {
+        success: false,
+        error: 'An unexpected error occurred while processing your request'
+      };
+    }
+  }
+
+  getAvailableProviders() {
+    const available = [];
+    for (const [key, provider] of Object.entries(this.providers)) {
+      if (provider.apiKey) {
+        available.push({
+          id: key,
+          name: provider.name,
+          model: provider.model
+        });
+      }
+    }
+    return available;
+  }
+}
+
+module.exports = new AIService();

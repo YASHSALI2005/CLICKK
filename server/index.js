@@ -21,12 +21,21 @@ const pty = require('node-pty');
 const find = require('find-process');
 require('dotenv').config();
 
+// Import AI service
+const aiService = require('./ai-service');
+
 // Set your project root (where files are stored)
 const PROJECT_ROOT = path.join(__dirname, 'projects', 'demo');
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+
+// Serve static files from the React build directory
+app.use(express.static(path.join(__dirname, '../client/build')));
+
+// Serve static files from the React public directory (fallback)
+app.use(express.static(path.join(__dirname, '../client/public')));
 
 // Helper: Recursively list all files and folders in a directory
 function listFilesRecursive(dir, prefix = '') {
@@ -313,6 +322,48 @@ wss.on('connection', function connection(ws, req) {
   ws.on('close', () => {
     ptyProcess.kill();
   });
+});
+
+// AI Chat endpoint
+app.post('/api/ai/chat', async (req, res) => {
+  try {
+    const { message, agent, context } = req.body;
+    
+    if (!message || !message.trim()) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Message is required' 
+      });
+    }
+
+    const result = await aiService.processMessage(message, agent || 'auto', context || {});
+    res.json(result);
+  } catch (error) {
+    console.error('AI chat error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Internal server error' 
+    });
+  }
+});
+
+// AI Providers endpoint
+app.get('/api/ai/providers', (req, res) => {
+  try {
+    const providers = aiService.getAvailableProviders();
+    res.json({ providers });
+  } catch (error) {
+    console.error('AI providers error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Internal server error' 
+    });
+  }
+});
+
+// Catch-all handler: send back React's index.html file for client-side routing
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client/build/index.html'));
 });
 
 app.listen(5000, () => console.log('Server running on http://localhost:5000')); 
