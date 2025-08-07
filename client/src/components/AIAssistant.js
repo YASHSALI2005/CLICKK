@@ -66,7 +66,6 @@ const AIAssistant = ({
   onFileCreate,
   onFileOpen
 }) => {
-  // Initialize state from sessionStorage, or with an empty array if nothing is stored.
   const [messages, setMessages] = useState(() => {
       try {
           const savedMessages = sessionStorage.getItem('ai-chat-messages');
@@ -80,11 +79,7 @@ const AIAssistant = ({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState('auto');
-  const [pastChats, setPastChats] = useState([
-    { id: 1, title: 'Just a friendly hello', timestamp: '4d' },
-    { id: 2, title: 'Integrate react and next.js frameworks', timestamp: '1w' },
-    { id: 3, title: 'Change ui structure for nested folders', timestamp: '1w' }
-  ]);
+  const [pastChats, setPastChats] = useState([]);
   const [showPastChats, setShowPastChats] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -97,7 +92,6 @@ const AIAssistant = ({
     { id: 'gpt4', name: 'GPT-4', description: 'OpenAI\'s most capable model' }
   ];
   
-  // Effect to load the syntax highlighting library (highlight.js)
   useEffect(() => {
     if (document.querySelector('script[src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"]')) {
         return;
@@ -119,7 +113,6 @@ const AIAssistant = ({
     };
   }, []);
 
-  // Effect to save messages to sessionStorage whenever they change.
   useEffect(() => {
       try {
         sessionStorage.setItem('ai-chat-messages', JSON.stringify(messages));
@@ -157,6 +150,8 @@ const AIAssistant = ({
     setInputValue('');
     setIsLoading(true);
 
+    // --- REAL API CALL ---
+    // This now calls your backend which will return the structured response.
     try {
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
@@ -181,22 +176,13 @@ const AIAssistant = ({
           id: Date.now() + 1,
           type: 'ai',
           content: data.response,
-          codeChanges: data.codeChanges,
+          // The backend provides this array based on its extraction logic
+          codeChanges: data.codeChanges || [], 
           suggestions: data.suggestions,
           timestamp: new Date().toLocaleTimeString()
         };
 
         setMessages(prev => [...prev, aiMessage]);
-
-        if (data.codeChanges && data.codeChanges.length > 0) {
-          data.codeChanges.forEach(change => {
-            if (change.type === 'modify' && change.file === currentFile) {
-              onCodeChange(change.newContent);
-            } else if (change.type === 'create') {
-              onFileCreate(change.file, change.content);
-            }
-          });
-        }
       } else {
         const errorMessage = {
           id: Date.now() + 1,
@@ -218,6 +204,23 @@ const AIAssistant = ({
       setIsLoading(false);
     }
   };
+  
+  // This function handles applying the code changes to the editor
+  const handleApplyChanges = (messageId, changes) => {
+    changes.forEach(change => {
+        if (change.type === 'modify' && change.file === currentFile) {
+            onCodeChange(change.newContent); // This updates the code in the editor
+        } else if (change.type === 'create') {
+            onFileCreate(change.file, change.newContent);
+        }
+    });
+
+    // Update the message to remove the action buttons after applying.
+    setMessages(prevMessages => prevMessages.map(msg => 
+        msg.id === messageId ? { ...msg, changesApplied: true } : msg
+    ));
+  };
+
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -268,20 +271,49 @@ const AIAssistant = ({
           <span className="message-time">{message.timestamp}</span>
         </div>
         <div className="message-content">
-          {message.type === 'ai' && message.codeChanges && (
-            <div className="code-changes">
-              <h4>Code Changes:</h4>
-              {message.codeChanges.map((change, index) => (
-                <div key={index} className="code-change">
-                  <span className="change-type">{change.type}</span>
-                  <span className="change-file">{change.file}</span>
-                </div>
-              ))}
-            </div>
-          )}
           <div className="message-text">
             {message.type === 'ai' ? renderContent(message.content) : message.content}
           </div>
+
+          {/* This UI will now be populated by the live API response */}
+          {message.type === 'ai' && message.codeChanges && message.codeChanges.length > 0 && (
+            <div className="code-changes-container" style={{ border: '1px solid #444', borderRadius: 8, marginTop: 16 }}>
+                <div style={{padding: '8px 12px', background: '#2d2d30', borderBottom: '1px solid #444'}}>
+                    <h4 style={{margin: 0, fontSize: 13, color: '#00aeff'}}>AI Code Changes</h4>
+                </div>
+                <div style={{padding: '12px'}}>
+                    {message.codeChanges.map((change, index) => (
+                        <div key={index} className="code-change-item" style={{fontSize: 13, marginBottom: 4}}>
+                            <span style={{
+                                background: change.type === 'modify' ? '#3a3d99' : '#2d7a4b', 
+                                padding: '2px 6px', 
+                                borderRadius: 4, 
+                                marginRight: 8,
+                                fontSize: 12
+                            }}>{change.type.toUpperCase()}</span>
+                            <span>{change.file}</span>
+                        </div>
+                    ))}
+                </div>
+                {!message.changesApplied && (
+                    <div className="code-changes-actions" style={{padding: '8px 12px', borderTop: '1px solid #444', display: 'flex', gap: 12}}>
+                        <button 
+                            onClick={() => handleApplyChanges(message.id, message.codeChanges)}
+                            style={{background: '#2d7a4b', color: 'white', border: 'none', borderRadius: 5, padding: '6px 12px', cursor: 'pointer', fontSize: 13, fontWeight: 'bold'}}
+                        >
+                            Accept
+                        </button>
+                        <button 
+                            onClick={() => setMessages(prev => prev.map(msg => msg.id === message.id ? {...msg, changesApplied: true} : msg))}
+                            style={{background: '#666', color: 'white', border: 'none', borderRadius: 5, padding: '6px 12px', cursor: 'pointer', fontSize: 13}}
+                        >
+                            Reject
+                        </button>
+                    </div>
+                )}
+            </div>
+          )}
+          
           {message.type === 'ai' && message.suggestions && (
             <div className="suggestions">
               <h4>Suggestions:</h4>
@@ -473,64 +505,6 @@ const AIAssistant = ({
             </svg>
           </button>
         </div>
-      </div>
-
-      {/* Past Chats Sidebar */}
-      <div style={{
-        borderTop: '1px solid #3e3e3e',
-        background: '#252526'
-      }}>
-        <div 
-          style={{
-            padding: '8px 16px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            fontSize: 12,
-            color: '#888'
-          }}
-          onClick={() => setShowPastChats(!showPastChats)}
-        >
-          <span>Past Chats</span>
-          <svg 
-            width="12" height="12" 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2"
-            style={{
-              transform: showPastChats ? 'rotate(90deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s'
-            }}
-          >
-            <polyline points="9 18 15 12 9 6"/>
-          </svg>
-        </div>
-        {showPastChats && (
-          <div style={{ padding: '0 16px 8px 16px' }}>
-            {pastChats.map(chat => (
-              <div key={chat.id} style={{
-                padding: '6px 0',
-                fontSize: 12,
-                color: '#888',
-                cursor: 'pointer',
-                borderBottom: '1px solid #3e3e3e'
-              }}>
-                <div style={{ color: '#cccccc', marginBottom: 2 }}>{chat.title}</div>
-                <div>{chat.timestamp}</div>
-              </div>
-            ))}
-            <div style={{
-              padding: '6px 0',
-              fontSize: 12,
-              color: '#0078d4',
-              cursor: 'pointer',
-              textAlign: 'center'
-            }}>
-              View All
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
