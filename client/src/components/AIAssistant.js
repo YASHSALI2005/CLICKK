@@ -5,6 +5,7 @@ import './AIAssistant.css';
 const CodeBlock = ({ language, code }) => {
     const codeRef = useRef(null);
     const [copied, setCopied] = useState(false);
+    const [hovered, setHovered] = useState(false);
 
     // Effect to apply syntax highlighting when the component mounts or the code changes.
     useEffect(() => {
@@ -32,27 +33,121 @@ const CodeBlock = ({ language, code }) => {
     };
 
     return (
-        <div className="code-block" style={{ position: 'relative', background: '#1e1e1e', border: '1px solid #3e3e3e', borderRadius: 8, margin: '12px 0', fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace', fontSize: 13, lineHeight: 1.6 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: '#2d2d30', borderTopLeftRadius: 8, borderTopRightRadius: 8 }}>
-                <span style={{ color: '#888', fontSize: 12, textTransform: 'lowercase' }}>{language}</span>
+        <div 
+            className="code-block" 
+            style={{ 
+                position: 'relative', 
+                background: 'linear-gradient(145deg, #1a1a1a, #2a2a2a)', 
+                border: '1px solid rgba(81, 162, 233, 0.2)', 
+                borderRadius: 12, 
+                margin: '16px 0', 
+                fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace', 
+                fontSize: 13, 
+                lineHeight: 1.6,
+                boxShadow: hovered ? '0 8px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(81, 162, 233, 0.3)' : '0 4px 12px rgba(0, 0, 0, 0.15)', 
+                transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                transform: hovered ? 'translateY(-2px)' : 'translateY(0)'
+            }}
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+        >
+            <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                padding: '8px 12px', 
+                background: 'linear-gradient(90deg, #2d2d30, #252528)', 
+                borderTopLeftRadius: 12, 
+                borderTopRightRadius: 12,
+                borderBottom: '1px solid rgba(81, 162, 233, 0.15)'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ 
+                        width: 10, 
+                        height: 10, 
+                        borderRadius: '50%', 
+                        background: '#ff5f56',
+                        boxShadow: '0 0 4px rgba(255, 95, 86, 0.8)'
+                    }}></span>
+                    <span style={{ 
+                        width: 10, 
+                        height: 10, 
+                        borderRadius: '50%', 
+                        background: '#ffbd2e',
+                        boxShadow: '0 0 4px rgba(255, 189, 46, 0.8)'
+                    }}></span>
+                    <span style={{ 
+                        width: 10, 
+                        height: 10, 
+                        borderRadius: '50%', 
+                        background: '#27c93f',
+                        boxShadow: '0 0 4px rgba(39, 201, 63, 0.8)'
+                    }}></span>
+                    <span style={{ 
+                        color: 'rgba(255, 255, 255, 0.6)', 
+                        fontSize: 12, 
+                        marginLeft: 8,
+                        textTransform: 'lowercase',
+                        fontWeight: 500,
+                        letterSpacing: '0.5px'
+                    }}>{language}</span>
+                </div>
                 <button 
                     onClick={handleCopy}
-                    style={{ background: 'transparent', color: copied ? '#4CAF50' : '#ccc', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '4px 8px' }}
+                    style={{ 
+                        background: copied ? 'rgba(76, 175, 80, 0.2)' : 'rgba(255, 255, 255, 0.05)', 
+                        color: copied ? '#4CAF50' : 'rgba(255, 255, 255, 0.7)', 
+                        border: 'none', 
+                        borderRadius: 4,
+                        cursor: 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 6, 
+                        fontSize: 12, 
+                        padding: '6px 10px',
+                        transition: 'all 0.2s ease',
+                        boxShadow: copied ? '0 0 0 1px rgba(76, 175, 80, 0.5)' : 'none'
+                    }}
                 >
                     {copied ? (
                         <>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"></path></svg>
-                            Copied!
+                            <span style={{ fontWeight: 500 }}>Copied!</span>
                         </>
                     ) : (
                         <>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"></path></svg>
-                            Copy code
+                            <span style={{ fontWeight: 500 }}>Copy code</span>
                         </>
                     )}
                 </button>
             </div>
-            <pre style={{ margin: 0, padding: '12px', background: 'transparent', overflowX: 'auto' }}><code ref={codeRef} className={`language-${language}`}>{code}</code></pre>
+            <div style={{ 
+                position: 'relative',
+                background: 'rgba(30, 30, 30, 0.6)',
+                borderBottomLeftRadius: 12,
+                borderBottomRightRadius: 12,
+                overflow: 'hidden'
+            }}>
+                <pre style={{ 
+                    margin: 0, 
+                    padding: '16px', 
+                    background: 'transparent', 
+                    overflowX: 'auto',
+                    borderRadius: 0
+                }}>
+                    <code ref={codeRef} className={`language-${language}`}>{code}</code>
+                </pre>
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    background: 'linear-gradient(to right, rgba(30, 30, 30, 0.1), transparent 10px, transparent 90%, rgba(30, 30, 30, 0.1))',
+                    pointerEvents: 'none'
+                }}></div>
+            </div>
         </div>
     );
 };
@@ -123,12 +218,35 @@ const AIAssistant = ({
 
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   };
 
   useEffect(() => {
-    scrollToBottom();
+    // Ensure scrolling happens after DOM updates
+    setTimeout(() => {
+      scrollToBottom();
+    }, 100);
   }, [messages]);
+  
+  // Handle scroll position when new messages are added
+  useEffect(() => {
+    const messagesContainer = document.querySelector('.ai-messages');
+    if (!messagesContainer) return;
+    
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = messagesContainer;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+      
+      if (isAtBottom) {
+        messagesContainer.setAttribute('data-at-bottom', 'true');
+      } else {
+        messagesContainer.removeAttribute('data-at-bottom');
+      }
+    };
+    
+    messagesContainer.addEventListener('scroll', handleScroll);
+    return () => messagesContainer.removeEventListener('scroll', handleScroll);
+  }, []);
 
   useEffect(() => {
     if (inputRef.current) {
