@@ -403,9 +403,8 @@ Be helpful, concise, and focus on practical solutions. Always consider the curre
           break;
         case 'auto':
         default:
-          // Try providers in order of accuracy: Groq, Cohere, Gemini, Perplexity
-          // Prioritizing accuracy over speed
-          const providers = ['groq', 'cohere', 'gemini', 'perplexity'];
+          // Try providers in order: Perplexity, Gemini, Cohere, Groq
+          const providers = ['perplexity', 'gemini', 'cohere', 'groq'];
           for (const provider of providers) {
             if (this.providers[provider].apiKey) {
               const methodName = `call${provider.charAt(0).toUpperCase()}${provider.slice(1)}`;

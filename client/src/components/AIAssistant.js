@@ -157,10 +157,6 @@ const AIAssistant = ({
   });
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
-  
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
   const agents = [
     { id: 'auto', name: 'Auto', description: 'Automatically choose the best agent' },
     { id: 'perplexity', name: 'Perplexity', description: 'Fast and accurate responses' },
