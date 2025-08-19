@@ -167,6 +167,16 @@ const AIAssistant = ({
     { id: 'gpt4', name: 'GPT-4', description: "OpenAI's most capable model" }
   ];
 
+  // Ensure chat view scrolls to the most recent message
+  const scrollToBottom = () => {
+    // Defer to next tick to ensure DOM updates are applied before scrolling
+    setTimeout(() => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }
+    }, 0);
+  };
+
   useEffect(() => {
     if (!document.querySelector('script[src*="highlight.min.js"]')) {
       const link = document.createElement('link');

@@ -311,7 +311,8 @@ export default function App() {
     fetchFiles();
     
     // Set up WebSocket connection for file explorer updates
-    const wsUrl = `ws://localhost:8081?workspace=${encodeURIComponent(workspace)}&type=explorer`;
+    const host = window.location.hostname || 'localhost';
+    const wsUrl = `ws://${host}:8081?workspace=${encodeURIComponent(workspace)}&type=explorer`;
     const socket = new window.WebSocket(wsUrl);
     
     socket.onmessage = (event) => {
@@ -1432,19 +1433,22 @@ export default function App() {
                                 </div>
                             ))
                         ) : (
-                            terminals.map(term => (
-                                <div key={term.id} style={{width: '100%', height: '100%', display: term.id === activeTerminal ? 'block' : 'none'}}>
-                                    <TerminalPanel 
-                                        ref={el => terminalRefs.current.set(term.id, el)}
-                                        workspace={workspace}
-                                        onProjectCreated={() => {
-                                            axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
-                                            setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
-                                            });
-                                        }} 
-                                    />
+                            (() => {
+                              const term = terminals.find(t => t.id === activeTerminal) || terminals[0];
+                              return term ? (
+                                <div key={term.id} style={{width: '100%', height: '100%'}}>
+                                  <TerminalPanel
+                                    ref={el => terminalRefs.current.set(term.id, el)}
+                                    workspace={workspace}
+                                    onProjectCreated={() => {
+                                      axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
+                                        setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
+                                      });
+                                    }}
+                                  />
                                 </div>
-                            ))
+                              ) : null;
+                            })()
                         )}
                     </div>
                     <div className="terminal-sidebar">

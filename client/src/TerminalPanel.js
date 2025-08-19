@@ -8,6 +8,8 @@ const TerminalPanel = forwardRef((props, ref) => {
   const xtermRef = useRef();
   const termRef = useRef();
   const fitAddonRef = useRef();
+  const socketRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
 
   useEffect(() => {
     const term = new Terminal({ 
@@ -38,11 +40,20 @@ const TerminalPanel = forwardRef((props, ref) => {
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    const wsUrl = props.workspace ? `ws://localhost:8081?workspace=${encodeURIComponent(props.workspace)}` : 'ws://localhost:8081';
-    const socket = new window.WebSocket(wsUrl);
+    const connect = () => {
+      const host = window.location.hostname || 'localhost';
+      const wsUrl = props.workspace
+        ? `ws://${host}:8081?workspace=${encodeURIComponent(props.workspace)}`
+        : `ws://${host}:8081`;
+      const socket = new window.WebSocket(wsUrl);
+      socketRef.current = socket;
 
-    socket.onmessage = (event) => {
-      term.write(event.data);
+      socket.onopen = () => {
+        reconnectAttemptsRef.current = 0;
+      };
+
+      socket.onmessage = (event) => {
+        term.write(event.data);
       // Project creation detection for multiple frameworks
       if (props.onProjectCreated) {
         const data = event.data.toLowerCase();
@@ -91,11 +102,31 @@ const TerminalPanel = forwardRef((props, ref) => {
           }, 1000);
         }
       }
+      };
+
+      socket.onerror = () => {
+        // Let onclose handle retries
+      };
+
+      socket.onclose = () => {
+        const attempt = Math.min(reconnectAttemptsRef.current + 1, 6);
+        reconnectAttemptsRef.current = attempt;
+        const delayMs = Math.pow(2, attempt) * 250;
+        setTimeout(() => {
+          if (termRef.current) {
+            connect();
+          }
+        }, delayMs);
+      };
+
+      term.onData(data => {
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+          socketRef.current.send(data);
+        }
+      });
     };
 
-    term.onData(data => {
-      socket.send(data);
-    });
+    connect();
 
     // Handle resizing
     const handleResize = () => {
@@ -106,7 +137,9 @@ const TerminalPanel = forwardRef((props, ref) => {
     window.addEventListener('resize', handleResize);
 
     return () => {
-      socket.close();
+      if (socketRef.current) {
+        try { socketRef.current.close(); } catch {}
+      }
       term.dispose();
       window.removeEventListener('resize', handleResize);
     };

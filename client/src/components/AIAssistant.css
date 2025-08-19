@@ -700,3 +700,27 @@
     right: 0;
   }
 }
+
+/* Make the Chat History button prominent and always visible */
+.history-button {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #3a4a5f 0%, #263246 100%);
+  border: 1px solid #245282;
+  border-radius: 6px;
+  color: #e6ecf3;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.history-button:hover {
+  background: linear-gradient(135deg, #4b6a8a 0%, #2b3a52 100%);
+  color: #fff;
+}
+
+.history-button svg {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+}
