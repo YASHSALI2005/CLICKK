@@ -16,6 +16,36 @@
   --border: #222;
 }
 
+/* Dark theme (default) */
+[data-theme="dark"] {
+  --bg-dark: #181a1b;
+  --bg-sidebar: #23272e;
+  --bg-explorer: #20232a;
+  --bg-editor: #181a1b;
+  --bg-topbar: #23272e;
+  --bg-statusbar: #23272e;
+  --bg-preview: #181a1b;
+  --text-light: #fff;
+  --text-muted: #bdbdbd;
+  --accent: #4fc3f7;
+  --border: #222;
+}
+
+/* Light theme */
+[data-theme="light"] {
+  --bg-dark: #f8f9fa;
+  --bg-sidebar: #f1f3f4;
+  --bg-explorer: #f8f9fa;
+  --bg-editor: #fafbfc;
+  --bg-topbar: #e8eaed;
+  --bg-statusbar: #e8eaed;
+  --bg-preview: #fafbfc;
+  --text-light: #202124;
+  --text-muted: #5f6368;
+  --accent: #1a73e8;
+  --border: #dadce0;
+}
+
 body, html, #root {
   height: 100%;
   margin: 0;
@@ -272,9 +302,9 @@ body, html, #root {
 }
 
 .settings-menu {
-  position: absolute;
+  position: fixed;
   left: 60px;
-  bottom: 40px;
+  bottom: 56px;
   background: #23272e;
   color: #fff;
   border-radius: 6px;
@@ -283,7 +313,7 @@ body, html, #root {
   padding: 8px 0;
   font-size: 1rem;
   border: 1px solid #222;
-  z-index: 100;
+  z-index: 3000;
 }
 .settings-menu .menu-item {
   padding: 10px 20px;
@@ -301,3 +331,64 @@ body, html, #root {
   background: #222;
   margin: 4px 0;
 } 
+
+/* Generic modal overlay/content used by Settings, Command Palette etc. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4000;
+}
+
+.modal-content {
+  background: #23272e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 16px;
+  width: 540px;
+  max-width: calc(100vw - 80px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.command-palette {
+  background: #23272e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 12px;
+  width: 560px;
+  max-width: calc(100vw - 80px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.command-palette input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #333;
+  background: #181a1b;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.command-item {
+  padding: 8px 10px;
+}
+
+.command-item.selected {
+  background: #094771;
+  color: #fff;
+}
+
+.modal-close-btn {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: transparent;
+  border: none;
+  color: #bdbdbd;
+  font-size: 20px;
+  cursor: pointer;
+}

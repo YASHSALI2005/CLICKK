@@ -134,11 +134,43 @@ export default function App() {
   const [showShortcutsPanel, setShowShortcutsPanel] = useState(false);
   const [showSnippetsPanel, setShowSnippetsPanel] = useState(false);
   const [showThemesPanel, setShowThemesPanel] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState('dark');
+  const [showTasksPanel, setShowTasksPanel] = useState(false);
+  const [tasksSearch, setTasksSearch] = useState('');
+  const [tasksIndex, setTasksIndex] = useState(0);
+  const [shortcutsSearch, setShortcutsSearch] = useState('');
+  const taskTemplates = [
+    { id:'msbuild', title:'MSBuild', desc:'Executes the build target', cmd:'echo msbuild (placeholder)' },
+    { id:'maven', title:'maven', desc:'Executes common maven commands', cmd:'mvn -v' },
+    { id:'dotnet', title:'.NET Core', desc:'Executes .NET Core build command', cmd:'dotnet --info' },
+    { id:'others', title:'Others', desc:'Example to run an arbitrary external command', cmd:'echo Hello from task' }
+  ];
+  const themes = [
+    { id: 'dark', name: 'Dark+ (default dark)', description: 'Default Dark Visual Studio Code theme' },
+    { id: 'light', name: 'Light+ (default light)', description: 'Default Light Visual Studio Code theme' }
+  ];
   const [openFolders, setOpenFolders] = useState({});
   const [folderMenu, setFolderMenu] = useState({ path: null, anchor: null });
   const [fileMenu, setFileMenu] = useState({ path: null, anchor: null });
   const [recentFiles, setRecentFiles] = useState([]);
   const [showPreferences, setShowPreferences] = useState(false);
+  const [profiles, setProfiles] = useState([
+    { id: 'default', name: 'Default', isActive: true, isDefault: false }
+  ]);
+  const [activeProfile, setActiveProfile] = useState('default');
+  const [profileContents, setProfileContents] = useState('contents');
+  const [profileFolders, setProfileFolders] = useState([
+    { host: 'Local', path: 'C:\\' },
+    { host: 'Local', path: 'C:\\Users\\Tejas' },
+    { host: 'Local', path: 'C:\\Users\\Tejas\\.spyder-py3\\speech_recognition\\Visaul_studio' },
+    { host: 'Local', path: 'C:\\Users\\Tejas\\.vscode\\extensions\\ms-python.debugpy-2024.4.0-win32-x64\\bundled\\libs\\debugpy\\l...' },
+    { host: 'Local', path: 'C:\\users\\tejas\\appdata\\roaming\\python\\python312\\site-packages' },
+    { host: 'Local', path: 'C:\\Users\\Tejas\\AppData\\Roaming\\Python\\Python312\\site-packages\\virtual-Mouse' },
+    { host: 'Local', path: 'C:\\Users\\Tejas\\Desktop\\CSS' },
+    { host: 'Local', path: 'C:\\Users\\Tejas\\Desktop\\New folder' },
+    { host: 'Local', path: 'C:\\Users\\Tejas\\Desktop\\React-folder' },
+    { host: 'Local', path: 'C:\\Users\\Tejas\\Desktop\\React-folder\\Flutter' }
+  ]);
   const [notification, setNotification] = useState('');
   const [terminalHeight, setTerminalHeight] = useState(200);
   const [activeBottomTab, setActiveBottomTab] = useState('terminal');
@@ -151,13 +183,127 @@ export default function App() {
   const [isSplitView, setIsSplitView] = useState(false); // New state for split view
   const [autoSave, setAutoSave] = useState(true);
   const [isAIAssistantVisible, setIsAIAssistantVisible] = useState(true);
+  const [wordWrapEnabled, setWordWrapEnabled] = useState(true);
+  const [editorInstance, setEditorInstance] = useState(null);
+  const [recentlyUsedCommands, setRecentlyUsedCommands] = useState([]);
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
   const terminalRefs = useRef(new Map());
+  const [profileContextMenu, setProfileContextMenu] = useState({ show: false, profileId: null, x: 0, y: 0 });
   
   const showNotification = (msg) => {
     setNotification(msg);
     setTimeout(() => setNotification(''), 2000);
+  };
+
+  const isView = (name) => typeof name === 'string' && name.startsWith('@view:');
+  const getViewLabel = (name) => {
+    const map = {
+      '@view:settings': 'Settings',
+      '@view:shortcuts': 'Keyboard Shortcuts',
+      '@view:extensions': 'Extensions',
+      '@view:snippets': 'User Snippets',
+      '@view:tasks': 'Tasks',
+      '@view:preferences': 'Preferences'
+    };
+    return map[name] || name;
+  };
+  const applyTheme = (themeId) => {
+    setCurrentTheme(themeId);
+    document.documentElement.setAttribute('data-theme', themeId);
+    localStorage.setItem('vscode-theme', themeId);
+  };
+  const openView = (key) => {
+    if (key === 'themes') {
+      setShowThemesPanel(true);
+      return;
+    }
+    if (key === 'preferences') {
+      setShowPreferences(true);
+      return;
+    }
+    const viewName = key.startsWith('@view:') ? key : `@view:${key}`;
+    setCurrentFile(viewName);
+    setRunOutput('');
+    setOpenTabs((prev) => (prev.includes(viewName) ? prev : [...prev, viewName]));
+  };
+
+  const createNewProfile = () => {
+    const name = prompt('Enter profile name:');
+    if (!name) return;
+    const newProfile = {
+      id: `profile_${Date.now()}`,
+      name: name,
+      isActive: false,
+      isDefault: false
+    };
+    setProfiles(prev => [...prev, newProfile]);
+  };
+
+  const setProfileAsDefault = (profileId) => {
+    setProfiles(prev => prev.map(p => ({
+      ...p,
+      isDefault: p.id === profileId
+    })));
+  };
+
+  const activateProfile = (profileId) => {
+    setActiveProfile(profileId);
+    setProfiles(prev => prev.map(p => ({
+      ...p,
+      isActive: p.id === profileId
+    })));
+  };
+
+  const deleteProfile = (profileId) => {
+    if (!window.confirm('Are you sure you want to delete this profile?')) return;
+    setProfiles(prev => prev.filter(p => p.id !== profileId));
+    if (activeProfile === profileId) {
+      const remainingProfiles = profiles.filter(p => p.id !== profileId);
+      if (remainingProfiles.length > 0) {
+        activateProfile(remainingProfiles[0].id);
+      }
+    }
+  };
+
+  const addFolderToProfile = () => {
+    const path = prompt('Enter folder path:');
+    if (!path) return;
+    const newFolder = { host: 'Local', path: path };
+    setProfileFolders(prev => [...prev, newFolder]);
+  };
+
+  const removeFolderFromProfile = (index) => {
+    if (!window.confirm('Are you sure you want to remove this folder?')) return;
+    setProfileFolders(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const showProfileContextMenu = (e, profileId) => {
+    e.preventDefault();
+    setProfileContextMenu({
+      show: true,
+      profileId,
+      x: e.clientX,
+      y: e.clientY
+    });
+  };
+
+  const hideProfileContextMenu = () => {
+    setProfileContextMenu({ show: false, profileId: null, x: 0, y: 0 });
+  };
+
+  const duplicateProfile = (profileId) => {
+    const originalProfile = profiles.find(p => p.id === profileId);
+    if (!originalProfile) return;
+    
+    const newProfile = {
+      id: `profile_${Date.now()}`,
+      name: `${originalProfile.name} (Copy)`,
+      isActive: false,
+      isDefault: false
+    };
+    setProfiles(prev => [...prev, newProfile]);
+    hideProfileContextMenu();
   };
 
   useEffect(() => {
@@ -166,14 +312,38 @@ export default function App() {
     });
   }, [workspace]);
 
+  // Load saved theme on app start
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('vscode-theme') || 'dark';
+    applyTheme(savedTheme);
+  }, []);
+
+  // Close profile context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (profileContextMenu.show) {
+        hideProfileContextMenu();
+      }
+    };
+    
+    if (profileContextMenu.show) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [profileContextMenu.show]);
+
   useEffect(() => {
     if (files.length > 0 && !currentFile) {
-      openFile(files[0]);
+      const firstRealFile = files.find(f => typeof f === 'string' && !f.endsWith('/'));
+      if (firstRealFile) {
+        openFile(firstRealFile);
+      }
     }
   }, [files]);
 
   const saveFile = () => {
     if (!currentFile) return;
+    if (isView(currentFile)) return;
     axios.post(`/api/file?workspace=${workspace}`, { name: currentFile, content: code });
   };
 
@@ -189,12 +359,21 @@ export default function App() {
     if (currentFile && code !== undefined && currentFile !== name) {
       saveFile();
     }
+    // If a folder or a special view is selected, do not fetch from server
+    if (typeof name === 'string' && (name.endsWith('/') || isView(name))) {
+    setCurrentFile(name);
+      setRunOutput('');
+    if (!openTabs.includes(name)) setOpenTabs([...openTabs, name]);
+      return;
+    }
     setCurrentFile(name);
     if (!openTabs.includes(name)) setOpenTabs([...openTabs, name]);
+    if (!isView(name)) {
     axios.get(`/api/file?workspace=${workspace}&name=${encodeURIComponent(name)}`)
       .then(fileRes => setCode(fileRes.data.content));
-    setRunOutput('');
     setRecentFiles(prev => [name, ...prev.filter(f => f !== name)].slice(0, 10));
+    }
+    setRunOutput('');
   };
 
   const handleSearch = async (e) => {
@@ -556,9 +735,18 @@ export default function App() {
 
   const renderSettingsMenu = () => (
     <div className="settings-menu">
-      <div className="menu-item" onClick={() => { setShowCommandPalette(true); setShowSettingsPanel(false); }}>Command Palette... <span style={{color:'#bdbdbd'}}>Ctrl+Shift+P</span></div>
+      <div className="menu-item" onClick={() => { setShowSettings(false); setShowCommandPalette(true); }}>Command Palette... <span style={{color:'#bdbdbd'}}>Ctrl+Shift+P</span></div>
+      <div className="menu-item" onClick={() => { setShowSettings(false); openView('preferences'); }}>Profiles</div>
+      <div className="menu-item" onClick={() => { setShowSettings(false); openView('settings'); }}>Settings <span style={{color:'#bdbdbd'}}>Ctrl+,</span></div>
+      <div className="menu-item" onClick={() => { setShowSettings(false); openView('extensions'); }}>Extensions <span style={{color:'#bdbdbd'}}>Ctrl+Shift+X</span></div>
+      <div className="menu-item" onClick={() => { setShowSettings(false); openView('shortcuts'); }}>Keyboard Shortcuts <span style={{color:'#bdbdbd'}}>Ctrl+K Ctrl+S</span></div>
+      <div className="menu-item" onClick={() => { setShowSettings(false); openView('snippets'); }}>Snippets</div>
+      <div className="menu-item" onClick={() => { setShowSettings(false); openView('tasks'); }}>Tasks</div>
+      <div className="menu-item" onClick={() => { setShowSettings(false); openView('themes'); }}>Themes <span style={{color:'#bdbdbd'}}>▶</span></div>
       <div className="menu-separator"></div>
-      <div className="menu-item" onClick={() => { setShowSettingsPanel(true); setShowCommandPalette(false); }}>Settings <span style={{color:'#bdbdbd'}}>Ctrl+,</span></div>
+      <div className="menu-item" onClick={() => { setShowSettings(false); openView('preferences'); }}>Backup and Sync Settings...</div>
+      <div className="menu-separator"></div>
+      <div className="menu-item" onClick={() => { setShowSettings(false); alert('You are up to date.'); }}>Check for Updates...</div>
     </div>
   );
 
@@ -608,12 +796,36 @@ export default function App() {
     if(term) term.writeToTerminal((runRes.data.output || '') + '\r\n');
   };
 
+  const runTaskCommand = (command) => {
+    setShowTerminal(true);
+    const term = terminalRefs.current.get(activeTerminal);
+    if (term) {
+      term.writeToTerminal(command + "\r\n");
+    } else {
+      // If terminal is not yet attached, create one and retry shortly
+      handleAddNewTerminal();
+      setTimeout(() => {
+        const t = terminalRefs.current.get(activeTerminal);
+        if (t) t.writeToTerminal(command + "\r\n");
+      }, 250);
+    }
+  };
+
   const commands = [
-    { id: 'open-settings', label: 'Open Settings', action: () => setShowSettingsPanel(true) },
+    { id: 'open-settings', label: 'Open Settings', shortcut: 'Ctrl+,', action: () => openView('settings') },
+    { id: 'view-toggle-word-wrap', label: 'View: Toggle Word Wrap', shortcut: 'Alt+Z', action: () => setWordWrapEnabled(v => !v) },
+    { id: 'editor-add-cursor-above', label: 'Add Cursor Above', shortcut: 'Ctrl+Alt+UpArrow', action: () => editorInstance && editorInstance.trigger('keyboard', 'editor.action.insertCursorAbove', null) },
+    { id: 'editor-add-cursor-below', label: 'Add Cursor Below', shortcut: 'Ctrl+Alt+DownArrow', action: () => editorInstance && editorInstance.trigger('keyboard', 'editor.action.insertCursorBelow', null) },
+    { id: 'editor-add-cursors-line-ends', label: 'Add Cursors to Line Ends', shortcut: 'Shift+Alt+I', action: () => editorInstance && editorInstance.trigger('keyboard', 'editor.action.insertCursorAtEndOfEachLineSelected', null) },
+    { id: 'editor-toggle-line-comment', label: 'Add Line Comment', shortcut: 'Ctrl+/', action: () => editorInstance && editorInstance.trigger('keyboard', 'editor.action.commentLine', null) },
     { id: 'go-live', label: 'Go Live', action: handleGoLive },
     { id: 'stop-live', label: 'Stop Live', action: handleStopLive },
     { id: 'run-file', label: 'Run Current File', action: runFileInTerminal },
     { id: 'open-terminal', label: 'Open Terminal', action: () => setShowTerminal(true) },
+    { id: 'open-extensions', label: 'Open Extensions', shortcut: 'Ctrl+Shift+X', action: () => openView('extensions') },
+    { id: 'open-keyboard-shortcuts', label: 'Open Keyboard Shortcuts', shortcut: 'Ctrl+K Ctrl+S', action: () => openView('shortcuts') },
+    { id: 'open-snippets', label: 'Open User Snippets', action: () => openView('snippets') },
+    { id: 'open-themes', label: 'Open Themes', action: () => openView('themes') },
   ];
 
   const filteredCommands = commands.filter(cmd =>
@@ -631,7 +843,9 @@ export default function App() {
         e.preventDefault();
       } else if (e.key === 'Enter') {
         if (filteredCommands[commandIndex]) {
-          filteredCommands[commandIndex].action();
+          const cmd = filteredCommands[commandIndex];
+          cmd.action();
+          setRecentlyUsedCommands(prev => [cmd.id, ...prev.filter(id => id !== cmd.id)].slice(0, 10));
           setShowCommandPalette(false);
           setCommandSearch('');
           setCommandIndex(0);
@@ -648,6 +862,32 @@ export default function App() {
     return () => window.removeEventListener('keydown', paletteHandler);
   }, [showCommandPalette, filteredCommands, commandIndex]);
 
+  // Keyboard navigation for Tasks quick pick
+  useEffect(() => {
+    if (!showTasksPanel) return;
+    const handler = (e) => {
+      if (e.key === 'ArrowDown') {
+        setTasksIndex(i => Math.min(i + 1, filteredTasks.length - 1));
+        e.preventDefault();
+      } else if (e.key === 'ArrowUp') {
+        setTasksIndex(i => Math.max(i - 1, 0));
+        e.preventDefault();
+      } else if (e.key === 'Enter') {
+        const t = filteredTasks[tasksIndex];
+        if (t) {
+          runTaskCommand(t.cmd);
+          setShowTasksPanel(false);
+        }
+        e.preventDefault();
+      } else if (e.key === 'Escape') {
+        setShowTasksPanel(false);
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [showTasksPanel, tasksIndex]);
+
   useEffect(() => {
     if (showCommandPalette && commandInputRef.current) {
       commandInputRef.current.focus();
@@ -661,6 +901,20 @@ export default function App() {
         setCommandSearch('');
         setCommandIndex(0);
         e.preventDefault();
+        return;
+      }
+      // Alt+Z toggles word wrap globally
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'z') {
+        setWordWrapEnabled(v => !v);
+        e.preventDefault();
+        return;
+      }
+      // Ctrl+/ toggles line comment
+      if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+        if (editorInstance) {
+          editorInstance.trigger('keyboard', 'editor.action.commentLine', null);
+          e.preventDefault();
+        }
       }
     };
     window.addEventListener('keydown', globalPaletteHandler);
@@ -720,6 +974,12 @@ export default function App() {
         switch (label) {
           case 'New Terminal':
             handleAddNewTerminal();
+            break;
+          case 'Run Task...':
+            setShowTasksPanel(true);
+            break;
+          case 'Run Build Task...':
+            runTaskCommand('npm run build');
             break;
           case 'Run Active File': handleRun(); break;
           case 'Toggle Terminal': setShowTerminal(s => !s); break;
@@ -810,6 +1070,7 @@ export default function App() {
   };
 
   const splitTerminals = getSplitTerminals();
+  const filteredTasks = taskTemplates.filter(t => (t.title + ' ' + t.desc).toLowerCase().includes(tasksSearch.toLowerCase()));
 
   return (
     <div className="app-root" style={{background:'#181a1b', color:'#fff', minHeight:'100vh'}}>
@@ -895,35 +1156,128 @@ export default function App() {
                   style={{ display: 'flex', alignItems: 'center' }}
                 >
                   <span style={{ marginRight: 4, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {isView(f) ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="M7 7h10M7 11h7"/></svg>
+                    ) : (
                     <img src={getFileIcon(f)} alt={getFileExtension(f) + ' file'} style={{ width: 16, height: 16 }} />
+                    )}
                   </span>
-                  {f}
+                  {isView(f) ? getViewLabel(f) : f}
                   <span className="close" onClick={e => closeTab(f, e)}>×</span>
                 </div>
               ))}
             </div>
             <div style={{flex:1, display:'flex', flexDirection:'column', background:'#23272e'}}>
-             
+             {isView(currentFile) ? (
+                <div style={{ flex: 1, overflow:'auto' }}>
+                  {currentFile === '@view:shortcuts' && (
+                    <div style={{ padding: 12 }}>
+                      <input
+                        type="text"
+                        value={shortcutsSearch}
+                        onChange={e => setShortcutsSearch(e.target.value)}
+                        placeholder="Type to search in keybindings"
+                        style={{ width:'100%', padding:'8px 10px', borderRadius:6, border:'1px solid #333', background:'#181a1b', color:'#fff', marginBottom:12 }}
+                      />
+                      <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.95rem' }}>
+                        <thead>
+                          <tr style={{ color:'#bdbdbd', textAlign:'left' }}>
+                            <th style={{ padding:'6px 8px', borderBottom:'1px solid #333' }}>Command</th>
+                            <th style={{ padding:'6px 8px', borderBottom:'1px solid #333' }}>Keybinding</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            { cmd:'View: Toggle Word Wrap', keys:'Alt+Z' },
+                            { cmd:'Add Cursor Above', keys:'Ctrl+Alt+UpArrow' },
+                            { cmd:'Add Cursor Below', keys:'Ctrl+Alt+DownArrow' },
+                            { cmd:'Add Cursors to Line Ends', keys:'Shift+Alt+I' },
+                            { cmd:'Add Line Comment', keys:'Ctrl+/' },
+                            { cmd:'Open Settings', keys:'Ctrl+,' },
+                            { cmd:'Open Extensions', keys:'Ctrl+Shift+X' },
+                            { cmd:'Open Keyboard Shortcuts', keys:'Ctrl+K Ctrl+S' },
+                            { cmd:'Command Palette', keys:'Ctrl+Shift+P' },
+                            { cmd:'Open Terminal', keys:'-' }
+                          ].filter(r => (r.cmd + ' ' + r.keys).toLowerCase().includes(shortcutsSearch.toLowerCase()))
+                           .map((r, i) => (
+                            <tr key={i}>
+                              <td style={{ padding:'6px 8px', borderBottom:'1px solid #333' }}>{r.cmd}</td>
+                              <td style={{ padding:'6px 8px', borderBottom:'1px solid #333', color:'#bdbdbd' }}>{r.keys}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {currentFile === '@view:settings' && (
+                    <div style={{ padding: 12, color:'#bdbdbd' }}>Settings coming soon.</div>
+                  )}
+                  {currentFile === '@view:extensions' && (
+                    <div style={{ padding: 12, color:'#bdbdbd' }}>Extensions UI coming soon.</div>
+                  )}
+                  {currentFile === '@view:snippets' && (
+                    <div style={{ padding: 12 }}>
+                      <div style={{ marginBottom: 8, color:'#bdbdbd' }}>Select Snippets File or Create Snippets</div>
+                      <input
+                        type="text"
+                        placeholder="Search snippets"
+                        style={{ width:'100%', padding:'8px 10px', borderRadius:6, border:'1px solid #333', background:'#181a1b', color:'#fff', marginBottom:8 }}
+                        onChange={() => {}}
+                      />
+                      <div style={{maxHeight: 360, overflowY:'auto'}}>
+                        {[
+                          { id:'global', title:'New Global Snippets file...', right:'New Snippets', action: () => alert('Global snippets coming soon') },
+                          { id:'workspace', title:`New Snippets file for '${workspace}'...`, action: () => alert('Workspace snippets coming soon') },
+                          { id:'bat', title:'bat', subtitle:'Batch' },
+                          { id:'bibtex', title:'bibtex', subtitle:'(BibTeX)' },
+                          { id:'c', title:'c', subtitle:'(C)' },
+                          { id:'clojure', title:'clojure', subtitle:'(Clojure)' },
+                          { id:'cmake', title:'cmake', subtitle:'(CMake)' }
+                        ].map((s, i) => (
+                          <div key={s.id}
+                               className="command-item"
+                               onClick={() => s.action && s.action()}
+                               style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                            <span>
+                              <span style={{ fontWeight:600 }}>{s.title}</span>
+                              {s.subtitle && <span style={{ color:'#bdbdbd' }}> {s.subtitle}</span>}
+                            </span>
+                            {s.right && <span style={{ color:'#bdbdbd' }}>{s.right}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {currentFile === '@view:tasks' && (
+                    <div style={{ padding: 12, color:'#bdbdbd' }}>Open Terminal → Run Task… from menu to pick a template.</div>
+                  )}
+                  {currentFile === '@view:preferences' && (
+                    <div style={{ padding: 12, color:'#bdbdbd' }}>Preferences coming soon.</div>
+                  )}
+                </div>
+              ) : (
                 <MonacoEditor
                   height="100%"
                   language={getLanguage(currentFile)}
                   defaultLanguage={getLanguage(currentFile)}
                   value={code || ''}
                   onChange={(value) => setCode(value || '')}
-                  theme="vs-dark"
+                  onMount={(editor) => setEditorInstance(editor)}
+                  theme={currentTheme === 'light' ? 'vs' : 'vs-dark'}
                   options={{
                     minimap: { enabled: false },
                     fontSize: 14,
                     lineHeight: 20,
-                    wordWrap: 'on',
+                    wordWrap: wordWrapEnabled ? 'on' : 'off',
                     scrollBeyondLastLine: false,
                     automaticLayout: true,
                     tabSize: 2,
                     insertSpaces: true,
-                    background: '#23272e',
+                    background: currentTheme === 'light' ? '#fafbfc' : '#23272e',
                   }}
                 />
-              
+              )}
             </div>
           </div>
           {showTerminal && (
@@ -931,9 +1285,9 @@ export default function App() {
               ref={terminalContainerRef}
               style={{ 
                 height: terminalHeight, 
-                background: '#181a1b',
-                borderTop: '1px solid #333',
-                color: '#fff',
+                background: 'var(--bg-dark)',
+                borderTop: '1px solid var(--border)',
+                color: 'var(--text-light)',
                 position: 'relative',
                 display: 'flex',
                 flexDirection: 'column',
@@ -943,7 +1297,7 @@ export default function App() {
                 style={{
                   height: 6,
                   cursor: 'ns-resize',
-                  background: isResizingRef.current ? '#4fc3f7' : '#23272e',
+                  background: isResizingRef.current ? 'var(--accent)' : 'var(--bg-sidebar)',
                   position: 'absolute',
                   top: 0,
                   left: 0,
@@ -955,8 +1309,8 @@ export default function App() {
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                background: '#23272e',
-                borderBottom: '1px solid #333',
+                background: 'var(--bg-sidebar)',
+                borderBottom: '1px solid var(--border)',
                 height: 36,
                 zIndex: 3,
                 position: 'relative',
@@ -990,7 +1344,7 @@ export default function App() {
                     <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
                         {isSplitView ? (
                             splitTerminals.map(term => (
-                                <div key={term.id} style={{width: '50%', height: '100%', borderRight: '1px solid #444'}}>
+                                <div key={term.id} style={{width: '50%', height: '100%', borderRight: '1px solid var(--border)'}}>
                                     <TerminalPanel 
                                         ref={el => terminalRefs.current.set(term.id, el)}
                                         workspace={workspace}
@@ -1101,32 +1455,391 @@ export default function App() {
           </div>
         </div>
       )}
+      {showExtensionsPanel && (
+        <div className="modal-overlay" onClick={() => setShowExtensionsPanel(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2 style={{marginTop:0, marginBottom:16}}>Extensions</h2>
+            <div style={{color:'#bdbdbd'}}>Extensions UI coming soon.</div>
+            <button onClick={() => setShowExtensionsPanel(false)} className="modal-close-btn">×</button>
+          </div>
+        </div>
+      )}
+      {showShortcutsPanel && (
+        <div className="modal-overlay" onClick={() => setShowShortcutsPanel(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2 style={{marginTop:0, marginBottom:16}}>Keyboard Shortcuts</h2>
+            <div style={{color:'#bdbdbd'}}>Shortcut customization coming soon.</div>
+            <button onClick={() => setShowShortcutsPanel(false)} className="modal-close-btn">×</button>
+          </div>
+        </div>
+      )}
+      {showSnippetsPanel && (
+        <div className="modal-overlay" onClick={() => setShowSnippetsPanel(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2 style={{marginTop:0, marginBottom:16}}>User Snippets</h2>
+            <div style={{color:'#bdbdbd'}}>Snippets management coming soon.</div>
+            <button onClick={() => setShowSnippetsPanel(false)} className="modal-close-btn">×</button>
+          </div>
+        </div>
+      )}
+      {showThemesPanel && (
+        <div className="modal-overlay" onClick={() => setShowThemesPanel(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2 style={{marginTop:0, marginBottom:16}}>Themes</h2>
+            <div style={{maxHeight: 320, overflowY: 'auto'}}>
+              {themes.map((theme) => (
+                <div
+                  key={theme.id}
+                  className={`command-item ${currentTheme === theme.id ? 'selected' : ''}`}
+                  onClick={() => { applyTheme(theme.id); setShowThemesPanel(false); }}
+                  style={{ display:'flex', flexDirection:'column', cursor:'pointer' }}
+                >
+                  <span style={{ fontWeight:600 }}>{theme.name}</span>
+                  <span style={{ color:'#bdbdbd', fontSize:'0.95em' }}>{theme.description}</span>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setShowThemesPanel(false)} className="modal-close-btn">×</button>
+          </div>
+        </div>
+      )}
+             {showPreferences && (
+         <div className="modal-overlay" onClick={() => setShowPreferences(false)}>
+           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ width: '80vw', maxWidth: '1200px', height: '80vh', display: 'flex', flexDirection: 'column' }}>
+             <div style={{ display: 'flex', height: '100%' }}>
+               {/* Left Sidebar */}
+               <div style={{ width: '300px', background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
+                 {/* New Profile Button */}
+                 <div style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
+                   <button 
+                     onClick={createNewProfile}
+                     style={{
+                       background: 'var(--accent)',
+                       color: 'white',
+                       border: 'none',
+                       borderRadius: '4px',
+                       padding: '8px 12px',
+                       cursor: 'pointer',
+                       fontSize: '14px',
+                       fontWeight: '500',
+                       display: 'flex',
+                       alignItems: 'center',
+                       gap: '8px'
+                     }}
+                   >
+                     New Profile
+                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                       <polyline points="6,9 12,15 18,9"></polyline>
+                     </svg>
+                   </button>
+                 </div>
+                 
+                 {/* Profile List */}
+                 <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+                   {profiles.map(profile => (
+                     <div 
+                       key={profile.id}
+                       style={{
+                         padding: '12px 16px',
+                         cursor: 'pointer',
+                         display: 'flex',
+                         alignItems: 'center',
+                         justifyContent: 'space-between',
+                         background: profile.isActive ? 'var(--accent)' : 'transparent',
+                         color: profile.isActive ? 'white' : 'var(--text-light)',
+                         borderBottom: '1px solid var(--border)'
+                       }}
+                       onClick={() => activateProfile(profile.id)}
+                     >
+                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                           <circle cx="12" cy="12" r="3"/>
+                           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82-.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09c0 .66.38 1.26 1 1.51a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06-.06A1.65 1.65 0 0 0 19.4 8c.36.36.57.86.6 1.39V9a2 2 0 1 1 0 4h-.09c-.03.53-.24 1.03-.6 1.39z"/>
+                         </svg>
+                         <span style={{ fontWeight: '500' }}>{profile.name}</span>
+                       </div>
+                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                         {profile.isActive && (
+                           <span style={{ fontSize: '12px', background: 'rgba(255,255,255,0.2)', padding: '2px 6px', borderRadius: '3px' }}>
+                             Active
+                           </span>
+                         )}
+                         <button
+                           onClick={(e) => showProfileContextMenu(e, profile.id)}
+                           style={{
+                             background: 'transparent',
+                             border: 'none',
+                             color: 'inherit',
+                             cursor: 'pointer',
+                             padding: '4px',
+                             borderRadius: '3px',
+                             display: 'flex',
+                             alignItems: 'center'
+                           }}
+                         >
+                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                             <circle cx="12" cy="12" r="1"/>
+                             <circle cx="19" cy="12" r="1"/>
+                             <circle cx="5" cy="12" r="1"/>
+                           </svg>
+                         </button>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+               
+               {/* Main Content */}
+               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-editor)' }}>
+                 {/* Profile Header */}
+                 <div style={{ padding: '24px 32px 16px 32px', borderBottom: '1px solid var(--border)' }}>
+                   <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '600', color: 'var(--text-light)' }}>
+                     {profiles.find(p => p.id === activeProfile)?.name || 'Default'}
+                   </h1>
+                 </div>
+                 
+                 {/* Use for New Windows Checkbox */}
+                 <div style={{ padding: '16px 32px', borderBottom: '1px solid var(--border)' }}>
+                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--text-light)' }}>
+                     <input 
+                       type="checkbox" 
+                       checked={profiles.find(p => p.id === activeProfile)?.isDefault || false}
+                       onChange={() => setProfileAsDefault(activeProfile)}
+                       style={{ width: '16px', height: '16px' }}
+                     />
+                     <span>Use this profile as the default for new windows</span>
+                   </label>
+                 </div>
+                 
+                 {/* Contents Section */}
+                 <div style={{ padding: '16px 32px', borderBottom: '1px solid var(--border)' }}>
+                   <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: '600', color: 'var(--text-light)' }}>
+                     Contents
+                   </h3>
+                   <p style={{ margin: '0 0 16px 0', color: 'var(--text-muted)', fontSize: '14px' }}>
+                     Browse contents of this profile
+                   </p>
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                     {[
+                       { id: 'contents', label: 'Contents', icon: '📁' },
+                       { id: 'settings', label: 'Settings', icon: '⚙️' },
+                       { id: 'shortcuts', label: 'Keyboard Shortcuts', icon: '⌨️' },
+                       { id: 'tasks', label: 'Tasks', icon: '📋' },
+                       { id: 'mcp', label: 'MCP Servers', icon: '🔌' },
+                       { id: 'snippets', label: 'Snippets', icon: '📝', collapsible: true },
+                       { id: 'extensions', label: 'Extensions', icon: '🧩', collapsible: true }
+                     ].map(item => (
+                       <div 
+                         key={item.id}
+                         style={{
+                           padding: '8px 12px',
+                           cursor: 'pointer',
+                           borderRadius: '4px',
+                           background: profileContents === item.id ? 'var(--accent)' : 'transparent',
+                           color: profileContents === item.id ? 'white' : 'var(--text-light)',
+                           display: 'flex',
+                           alignItems: 'center',
+                           gap: '8px'
+                         }}
+                         onClick={() => setProfileContents(item.id)}
+                       >
+                         {item.collapsible && (
+                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                             <polyline points="9,18 15,12 9,6"></polyline>
+                           </svg>
+                         )}
+                         <span>{item.icon}</span>
+                         <span>{item.label}</span>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+                 
+                 {/* Folders & Workspaces Section */}
+                 <div style={{ flex: 1, padding: '16px 32px', overflowY: 'auto' }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                     <div>
+                       <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: '600', color: 'var(--text-light)' }}>
+                         Folders & Workspaces
+                       </h3>
+                       <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '14px' }}>
+                         Following folders and workspaces are using this profile
+                       </p>
+                     </div>
+                     <button 
+                       onClick={addFolderToProfile}
+                       style={{
+                         background: 'var(--accent)',
+                         color: 'white',
+                         border: 'none',
+                         borderRadius: '4px',
+                         padding: '6px 12px',
+                         cursor: 'pointer',
+                         fontSize: '12px',
+                         fontWeight: '500'
+                       }}
+                     >
+                       Add Folder
+                     </button>
+                   </div>
+                   <div style={{ background: 'var(--bg-sidebar)', borderRadius: '6px', overflow: 'hidden' }}>
+                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                       <thead>
+                         <tr style={{ background: 'var(--bg-topbar)', borderBottom: '1px solid var(--border)' }}>
+                           <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)' }}>Host</th>
+                           <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)' }}>Path</th>
+                           <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)', width: '60px' }}>Actions</th>
+                         </tr>
+                       </thead>
+                       <tbody>
+                         {profileFolders.map((folder, index) => (
+                           <tr key={index} style={{ borderBottom: '1px solid var(--border)' }}>
+                             <td style={{ padding: '12px 16px', fontSize: '14px', color: 'var(--text-light)' }}>{folder.host}</td>
+                             <td style={{ padding: '12px 16px', fontSize: '14px', color: 'var(--text-light)', fontFamily: 'monospace' }}>{folder.path}</td>
+                             <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                               <button
+                                 onClick={() => removeFolderFromProfile(index)}
+                                 style={{
+                                   background: 'transparent',
+                                   border: 'none',
+                                   color: '#e57373',
+                                   cursor: 'pointer',
+                                   padding: '4px',
+                                   borderRadius: '3px'
+                                 }}
+                                 title="Remove folder"
+                               >
+                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                   <polyline points="3,6 5,6 21,6"></polyline>
+                                   <path d="M19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path>
+                                 </svg>
+                               </button>
+                             </td>
+                           </tr>
+                         ))}
+                       </tbody>
+                     </table>
+                   </div>
+                 </div>
+               </div>
+             </div>
+             <button onClick={() => setShowPreferences(false)} className="modal-close-btn">×</button>
+             
+             {/* Profile Context Menu */}
+             {profileContextMenu.show && (
+               <div 
+                 style={{
+                   position: 'fixed',
+                   left: profileContextMenu.x,
+                   top: profileContextMenu.y,
+                   background: 'var(--bg-sidebar)',
+                   border: '1px solid var(--border)',
+                   borderRadius: '6px',
+                   boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                   zIndex: 5000,
+                   minWidth: '160px',
+                   padding: '4px 0'
+                 }}
+                 onClick={e => e.stopPropagation()}
+               >
+                 <div 
+                   style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '14px', color: 'var(--text-light)' }}
+                   onClick={() => { setProfileAsDefault(profileContextMenu.profileId); hideProfileContextMenu(); }}
+                 >
+                   Set as Default
+                 </div>
+                 <div 
+                   style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '14px', color: 'var(--text-light)' }}
+                   onClick={() => duplicateProfile(profileContextMenu.profileId)}
+                 >
+                   Duplicate
+                 </div>
+                 <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }}></div>
+                 <div 
+                   style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '14px', color: '#e57373' }}
+                   onClick={() => { deleteProfile(profileContextMenu.profileId); hideProfileContextMenu(); }}
+                 >
+                   Delete
+                 </div>
+               </div>
+             )}
+           </div>
+         </div>
+       )}
+      {showTasksPanel && (
+        <div className="modal-overlay" onClick={() => setShowTasksPanel(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h3 style={{margin:'0 0 8px 0', color:'#bdbdbd'}}>Select a Task Template</h3>
+            <input
+              ref={tasksInputRef => {
+                if (tasksInputRef && showTasksPanel) {
+                  tasksInputRef.focus();
+                }
+              }}
+              type="text"
+              value={tasksSearch}
+              onChange={e => { setTasksSearch(e.target.value); setTasksIndex(0); }}
+              placeholder="Search tasks..."
+              style={{ width:'100%', padding:'8px 10px', borderRadius:6, border:'1px solid #333', background:'#181a1b', color:'#fff', marginBottom:8 }}
+            />
+            <div style={{maxHeight: 320, overflowY: 'auto'}}>
+              {filteredTasks.map((t, i) => (
+                <div
+                  key={t.id}
+                  className={`command-item ${i === tasksIndex ? 'selected' : ''}`}
+                  onMouseEnter={() => setTasksIndex(i)}
+                  onClick={() => { runTaskCommand(t.cmd); setShowTasksPanel(false); }}
+                  style={{ display:'flex', flexDirection:'column' }}
+                >
+                  <span style={{ fontWeight:600 }}>{t.title}</span>
+                  <span style={{ color:'#bdbdbd', fontSize:'0.95em' }}>{t.desc}</span>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setShowTasksPanel(false)} className="modal-close-btn">×</button>
+          </div>
+        </div>
+      )}
       {showCommandPalette && (
         <div className="modal-overlay" onClick={() => setShowCommandPalette(false)}>
           <div className="command-palette" onClick={e => e.stopPropagation()}>
+            <div style={{ position:'relative', marginBottom: 8 }}>
+              <span style={{ position:'absolute', top: 9, left: 10, color:'#9aa0a6' }}>&gt;</span>
             <input
               ref={commandInputRef}
               type="text"
               placeholder="Type a command..."
               value={commandSearch}
               onChange={e => { setCommandSearch(e.target.value); setCommandIndex(0); }}
-            />
-            <div style={{maxHeight: 320, overflowY: 'auto'}}>
-              {filteredCommands.map((cmd, i) => (
+                style={{ paddingLeft: 24 }}
+              />
+            </div>
+            <div style={{maxHeight: 360, overflowY: 'auto'}}>
+              {filteredCommands.map((cmd, i) => {
+                const isSelected = i === commandIndex;
+                const recentlyUsed = recentlyUsedCommands.length > 0 && recentlyUsedCommands[0] === cmd.id;
+                return (
                 <div
                   key={cmd.id}
-                  className={`command-item ${i === commandIndex ? 'selected' : ''}`}
+                    className={`command-item ${isSelected ? 'selected' : ''}`}
                   onMouseEnter={() => setCommandIndex(i)}
                   onClick={() => {
                     cmd.action();
+                      setRecentlyUsedCommands(prev => [cmd.id, ...prev.filter(id => id !== cmd.id)].slice(0, 10));
                     setShowCommandPalette(false);
                     setCommandSearch('');
                     setCommandIndex(0);
                   }}
-                >
-                  {cmd.label}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}
+                  >
+                    <span>{cmd.label}</span>
+                    <span style={{ display:'flex', alignItems:'center', gap: 12 }}>
+                      {recentlyUsed && <span style={{ color:'#9aa0a6', fontSize:'0.85em' }}>recently used</span>}
+                      {cmd.shortcut && <span style={{ color:'#bdbdbd', fontSize:'0.95em' }}>{cmd.shortcut}</span>}
+                    </span>
                 </div>
-              ))}
+                );
+              })}
             </div>
             <button onClick={() => setShowCommandPalette(false)} className="modal-close-btn">×</button>
           </div>
