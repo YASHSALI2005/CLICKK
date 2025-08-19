@@ -246,6 +246,28 @@ Be helpful, concise, and focus on practical solutions. Always consider the curre
       }
     }
     
+    // Check if this is a project creation request
+    const isProjectCreationRequest = /create\s+(?:a|an)\s+(?:new\s+)?(?:react|vue|angular|next\.?js|node\.?js|express)\s+(?:project|app)/i.test(response);
+    
+    // If it's a project creation request, we should suggest running commands instead of creating files
+    if (isProjectCreationRequest) {
+      // Add a special suggestion to run project creation commands
+      return [{
+        type: 'project_creation',
+        message: 'This task requires creating a new project structure. Instead of creating individual files, you should run the appropriate project creation command.',
+        commands: [
+          {
+            description: 'Create a new React project',
+            command: 'npx create-react-app my-app'
+          },
+          {
+            description: 'Create a new React project with Vite',
+            command: 'npm create vite@latest my-app -- --template react'
+          }
+        ]
+      }];
+    }
+    
     // Fallback: Extract code blocks and create files based on language hints
     const codeBlocks = [];
     const codeBlockRegex = /```([\w-]+)?\s*\n([\s\S]*?)```/g;

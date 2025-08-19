@@ -1,3 +1,0 @@
-This is a test file to verify that the AI can automatically implement code changes.
-
-Please ask the AI to create a simple HTML file with a button that shows an alert when clicked.

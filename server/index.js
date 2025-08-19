@@ -382,6 +382,49 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 });
 
+// Execute project creation command
+app.post('/api/execute-command', (req, res) => {
+  try {
+    const { command, workspace } = req.body;
+    
+    if (!command) {
+      return res.status(400).json({ error: 'Command is required' });
+    }
+    
+    const projectRoot = workspace ? path.join(__dirname, 'projects', workspace) : PROJECT_ROOT;
+    
+    // Ensure the directory exists
+    if (!fs.existsSync(projectRoot)) {
+      fs.mkdirSync(projectRoot, { recursive: true });
+    }
+    
+    console.log(`Executing command: ${command} in ${projectRoot}`);
+    
+    // Execute the command in the project directory
+    const childProcess = exec(command, { cwd: projectRoot }, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Command execution error: ${error.message}`);
+        return res.status(500).json({ 
+          success: false, 
+          error: error.message,
+          stdout,
+          stderr
+        });
+      }
+      
+      console.log(`Command executed successfully: ${stdout}`);
+      res.json({ 
+        success: true, 
+        output: stdout,
+        error: stderr
+      });
+    });
+  } catch (error) {
+    console.error('Command execution error:', error);
+    res.status(500).json({ success: false, error: 'Command execution failed' });
+  }
+});
+
 // AI Providers endpoint
 app.get('/api/ai/providers', (req, res) => {
   try {

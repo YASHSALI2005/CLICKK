@@ -285,6 +285,72 @@ const AIAssistant = ({
     }
   };
 
+  // Execute project creation command
+  const executeProjectCreationCommand = async (change) => {
+    if (!change || !change.commands || change.commands.length === 0) return;
+    
+    // Use the first command by default
+    const commandToExecute = change.commands[0];
+    
+    try {
+      // Show a loading message
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now(),
+          type: 'system',
+          content: `Executing command: ${commandToExecute.command}...`,
+          timestamp: new Date().toLocaleTimeString()
+        }
+      ]);
+      
+      // Call the API to execute the command
+      const response = await fetch('/api/execute-command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command: commandToExecute.command,
+          workspace: workspace
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: Date.now(),
+            type: 'system',
+            content: `Command executed successfully!\n\nOutput:\n${result.output}`,
+            timestamp: new Date().toLocaleTimeString()
+          }
+        ]);
+      } else {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: Date.now(),
+            type: 'error',
+            content: `Command execution failed: ${result.error}\n\nOutput:\n${result.stdout || ''}\n\nError:\n${result.stderr || ''}`,
+            timestamp: new Date().toLocaleTimeString()
+          }
+        ]);
+      }
+    } catch (error) {
+      console.error('Error executing command:', error);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now(),
+          type: 'error',
+          content: `Failed to execute command: ${error.message}`,
+          timestamp: new Date().toLocaleTimeString()
+        }
+      ]);
+    }
+  };
+  
   // Applying code changes:
   const handleApplyChanges = (messageId, changes) => {
     // Skip if changes were already applied automatically
@@ -298,6 +364,9 @@ const AIAssistant = ({
         onCodeChange(change.newContent);
       } else if (change.type === 'create') {
         onFileCreate(change.file, change.newContent);
+      } else if (change.type === 'project_creation') {
+        // For project creation, we'll execute the commands automatically
+        executeProjectCreationCommand(change);
       }
     });
     setMessages(prev =>
@@ -344,6 +413,41 @@ const AIAssistant = ({
     );
   };
 
+  const renderProjectCreationCommands = (change) => {
+    if (!change || change.type !== 'project_creation') return null;
+    
+    return (
+      <div className="project-creation-commands">
+        <div className="command-header">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+          </svg>
+          <span>Project Creation Commands</span>
+        </div>
+        <div className="command-message">{change.message}</div>
+        <div className="command-list">
+          {change.commands.map((cmd, idx) => (
+            <div key={idx} className="command-item">
+              <div className="command-description">{cmd.description}</div>
+              <div className="command-code">
+                <code>{cmd.command}</code>
+                <button 
+                  onClick={() => navigator.clipboard.writeText(cmd.command)}
+                  className="copy-button"
+                  title="Copy to clipboard"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const renderMessage = (message) => (
     <div key={message.id} className={`message ${message.type}`}>
       <div className="message-header">
@@ -354,6 +458,12 @@ const AIAssistant = ({
         <div className="message-text">
           {message.type === 'ai' ? renderContent(message.content) : message.content}
         </div>
+        {/* Render project creation commands if available */}
+        {message.type === 'ai' && message.codeChanges && message.codeChanges.some(change => change.type === 'project_creation') && (
+          message.codeChanges
+            .filter(change => change.type === 'project_creation')
+            .map((change, idx) => renderProjectCreationCommands(change, idx))
+        )}
         {!!(message.type === 'ai' && message.codeChanges?.length) && (
           <div className="code-changes-container" style={{
             border: '1px solid #2e6296', borderRadius: 8, marginTop: 18, marginBottom: 10, background: '#1b2230'
@@ -367,7 +477,7 @@ const AIAssistant = ({
               )}
             </div>
             <div style={{padding: '12px'}}>
-              {message.codeChanges.map((change, index) => (
+              {message.codeChanges.filter(change => change.type !== 'project_creation').map((change, index) => (
                 <div key={index} style={{
                   fontSize: 13, marginBottom: 4, display: 'flex', gap: 10, alignItems: 'center'
                 }}>

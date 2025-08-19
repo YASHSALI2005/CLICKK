@@ -724,3 +724,81 @@
 .history-button svg {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
 }
+
+/* Project Creation Commands */
+.project-creation-commands {
+  margin: 15px 0;
+  background: linear-gradient(145deg, #1e2433 0%, #262f3c 100%);
+  border: 1px solid rgba(81, 162, 233, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.command-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 15px;
+  background: linear-gradient(90deg, #283548 0%, #252528 100%);
+  border-bottom: 1px solid rgba(81, 162, 233, 0.12);
+  color: #aad;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.command-message {
+  padding: 12px 15px;
+  color: #dde;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(81, 162, 233, 0.12);
+  line-height: 1.5;
+}
+
+.command-list {
+  padding: 10px 15px;
+}
+
+.command-item {
+  margin-bottom: 12px;
+}
+
+.command-item:last-child {
+  margin-bottom: 0;
+}
+
+.command-description {
+  color: #aad;
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+
+.command-code {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+
+.command-code code {
+  color: #51a2e9;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 13px;
+}
+
+.copy-button {
+  background: transparent;
+  border: none;
+  color: #aad;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.copy-button:hover {
+  background: rgba(81, 162, 233, 0.1);
+  color: #51a2e9;
+}
