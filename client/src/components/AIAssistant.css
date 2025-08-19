@@ -14,6 +14,8 @@
   box-shadow: -5px 0 20px rgba(0, 0, 0, 0.4);
   position: relative;
   overflow: hidden;
+    padding-bottom: 60px; /* Add enough space for bottom toolbar */
+
 }
 
 @media (max-width: 768px) {
@@ -34,6 +36,7 @@
   animation: rotate 60s linear infinite;
   pointer-events: none;
   z-index: 0;
+  
 }
 
 @keyframes rotate {
@@ -47,6 +50,11 @@
 
 .ai-assistant.open {
   right: 0;
+}
+@keyframes opacityPulse {
+  0% {opacity: .7;}
+  80% {opacity: 1;}
+  100% {opacity: .6;}
 }
 
 .ai-header {

@@ -1,344 +1,269 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './AIAssistant.css';
 
-// A dedicated component for rendering code blocks with syntax highlighting and a copy button.
+// Pretty code block with language label and copy button.
 const CodeBlock = ({ language, code }) => {
-    const codeRef = useRef(null);
-    const [copied, setCopied] = useState(false);
-    const [hovered, setHovered] = useState(false);
+  const codeRef = useRef(null);
+  const [copied, setCopied] = useState(false);
+  const [hovered, setHovered] = useState(false);
 
-    // Effect to apply syntax highlighting when the component mounts or the code changes.
-    useEffect(() => {
-        if (codeRef.current && window.hljs) {
-            window.hljs.highlightElement(codeRef.current);
-        }
-    }, [code]);
+  useEffect(() => {
+    if (codeRef.current && window.hljs) {
+      window.hljs.highlightElement(codeRef.current);
+    }
+  }, [code]);
 
-    // Handles copying the code to the clipboard.
-    const handleCopy = () => {
-        const textArea = document.createElement('textarea');
-        textArea.value = code;
-        textArea.style.position = 'fixed'; // Avoid scrolling to bottom
-        textArea.style.left = '-9999px';
-        document.body.appendChild(textArea);
-        textArea.select();
-        try {
-            document.execCommand('copy');
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000); // Reset button state after 2 seconds
-        } catch (err) {
-            console.error('Failed to copy code: ', err);
-        }
-        document.body.removeChild(textArea);
-    };
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(err => {
+      console.error('Failed to copy code: ', err);
+      // Fallback to older method if clipboard API fails
+      const textArea = document.createElement('textarea');
+      textArea.value = code;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-9999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch (err) {
+        console.error('Fallback copy failed: ', err);
+      }
+      document.body.removeChild(textArea);
+    });
+  };
 
-    return (
-        <div 
-            className="code-block" 
-            style={{ 
-                position: 'relative', 
-                background: 'linear-gradient(145deg, #1a1a1a, #2a2a2a)', 
-                border: '1px solid rgba(81, 162, 233, 0.2)', 
-                borderRadius: 12, 
-                margin: '16px 0', 
-                fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace', 
-                fontSize: 13, 
-                lineHeight: 1.6,
-                boxShadow: hovered ? '0 8px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(81, 162, 233, 0.3)' : '0 4px 12px rgba(0, 0, 0, 0.15)', 
-                transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                transform: hovered ? 'translateY(-2px)' : 'translateY(0)'
-            }}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-        >
-            <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
-                padding: '8px 12px', 
-                background: 'linear-gradient(90deg, #2d2d30, #252528)', 
-                borderTopLeftRadius: 12, 
-                borderTopRightRadius: 12,
-                borderBottom: '1px solid rgba(81, 162, 233, 0.15)'
-            }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ 
-                        width: 10, 
-                        height: 10, 
-                        borderRadius: '50%', 
-                        background: '#ff5f56',
-                        boxShadow: '0 0 4px rgba(255, 95, 86, 0.8)'
-                    }}></span>
-                    <span style={{ 
-                        width: 10, 
-                        height: 10, 
-                        borderRadius: '50%', 
-                        background: '#ffbd2e',
-                        boxShadow: '0 0 4px rgba(255, 189, 46, 0.8)'
-                    }}></span>
-                    <span style={{ 
-                        width: 10, 
-                        height: 10, 
-                        borderRadius: '50%', 
-                        background: '#27c93f',
-                        boxShadow: '0 0 4px rgba(39, 201, 63, 0.8)'
-                    }}></span>
-                    <span style={{ 
-                        color: 'rgba(255, 255, 255, 0.6)', 
-                        fontSize: 12, 
-                        marginLeft: 8,
-                        textTransform: 'lowercase',
-                        fontWeight: 500,
-                        letterSpacing: '0.5px'
-                    }}>{language}</span>
-                </div>
-                <button 
-                    onClick={handleCopy}
-                    style={{ 
-                        background: copied ? 'rgba(76, 175, 80, 0.2)' : 'rgba(255, 255, 255, 0.05)', 
-                        color: copied ? '#4CAF50' : 'rgba(255, 255, 255, 0.7)', 
-                        border: 'none', 
-                        borderRadius: 4,
-                        cursor: 'pointer', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: 6, 
-                        fontSize: 12, 
-                        padding: '6px 10px',
-                        transition: 'all 0.2s ease',
-                        boxShadow: copied ? '0 0 0 1px rgba(76, 175, 80, 0.5)' : 'none'
-                    }}
-                >
-                    {copied ? (
-                        <>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"></path></svg>
-                            <span style={{ fontWeight: 500 }}>Copied!</span>
-                        </>
-                    ) : (
-                        <>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"></path></svg>
-                            <span style={{ fontWeight: 500 }}>Copy code</span>
-                        </>
-                    )}
-                </button>
-            </div>
-            <div style={{ 
-                position: 'relative',
-                background: 'rgba(30, 30, 30, 0.6)',
-                borderBottomLeftRadius: 12,
-                borderBottomRightRadius: 12,
-                overflow: 'hidden'
-            }}>
-                <pre style={{ 
-                    margin: 0, 
-                    padding: '16px', 
-                    background: 'transparent', 
-                    overflowX: 'auto',
-                    borderRadius: 0
-                }}>
-                    <code ref={codeRef} className={`language-${language}`}>{code}</code>
-                </pre>
-                <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    background: 'linear-gradient(to right, rgba(30, 30, 30, 0.1), transparent 10px, transparent 90%, rgba(30, 30, 30, 0.1))',
-                    pointerEvents: 'none'
-                }}></div>
-            </div>
+  return (
+    <div
+      className="code-block"
+      style={{
+        position: 'relative',
+        background: 'linear-gradient(145deg, #181a23 0%, #262f3c 90%)',
+        border: '1px solid rgba(81, 162, 233, 0.24)',
+        borderRadius: 12,
+        margin: '20px 0 24px',
+        fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace',
+        fontSize: 13,
+        lineHeight: 1.65,
+        boxShadow: hovered ? '0 8px 15px rgba(21, 81, 233, 0.10)' : '0 4px 14px rgba(0,0,0,0.10)',
+        transition: 'all 0.35s cubic-bezier(.22,1,.36,1)',
+        transform: hovered ? 'translateY(-2px) scale(1.015)' : 'none',
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '8px 12px',
+        background: 'linear-gradient(90deg, #283548 0%, #252528 100%)',
+        borderTopLeftRadius: 12,
+        borderTopRightRadius: 12,
+        borderBottom: '1px solid rgba(81, 162, 233, 0.12)'
+      }}>
+        <div style={{display: 'flex', alignItems: 'center', gap: 9}}>
+          <span style={{width: 10, height: 10, borderRadius: '50%', background: '#ff5f56', boxShadow: '0 0 4px #ff5f5685'}}></span>
+          <span style={{width: 10, height: 10, borderRadius: '50%', background: '#ffbd2e', boxShadow: '0 0 4px #ffbd2e85'}}></span>
+          <span style={{width: 10, height: 10, borderRadius: '50%', background: '#27c93f', boxShadow: '0 0 4px #27c93f85'}}></span>
+          <span style={{color: 'rgba(255,255,255,0.68)', fontSize: 12, marginLeft: 8}}>
+            {language}
+          </span>
         </div>
-    );
+        <button onClick={handleCopy}
+            style={{
+              background: copied ? 'rgba(76, 175, 80, 0.3)' : 'rgba(81, 162, 233, 0.2)',
+              color: copied ? '#4caf50' : '#51a2e9',
+              border: copied ? '1px solid rgba(76, 175, 80, 0.5)' : '1px solid rgba(81, 162, 233, 0.3)',
+              borderRadius: 6,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 12,
+              padding: '6px 12px',
+              fontWeight: 600,
+              transition: 'all 0.18s',
+              boxShadow: hovered ? '0 2px 5px rgba(81, 162, 233, 0.2)' : 'none',
+              transform: copied ? 'scale(1.05)' : 'none'
+            }}>
+          {copied ? (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"></path></svg>
+              <span style={{ fontWeight: 600 }}>Copied!</span>
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"></path></svg>
+              <span style={{ fontWeight: 600 }}>Copy code</span>
+            </>
+          )}
+        </button>
+      </div>
+      <div style={{
+        position: 'relative',
+        background: 'rgba(32,34,44,0.65)',
+        borderBottomLeftRadius: 12,
+        borderBottomRightRadius: 12,
+        overflow: 'hidden',
+        boxShadow: 'inset 0 0 10px rgba(0,0,0,0.2)'
+      }}>
+        <pre style={{
+          margin: 0,
+          padding: '16px',
+          background: 'transparent',
+          overflowX: 'auto',
+          maxHeight: '400px',
+          overflowY: 'auto'
+        }}>
+          <code ref={codeRef} className={`language-${language}`}>{code}</code>
+        </pre>
+      </div>
+    </div>
+  );
 };
 
-
-const AIAssistant = ({ 
-  currentFile, 
-  currentCode, 
+const AIAssistant = ({
+  currentFile,
+  currentCode,
   workspace,
   onCodeChange,
   onFileCreate,
   onFileOpen
 }) => {
   const [messages, setMessages] = useState(() => {
-      try {
-          const savedMessages = sessionStorage.getItem('ai-chat-messages');
-          return savedMessages ? JSON.parse(savedMessages) : [];
-      } catch (error) {
-          console.error("Could not parse messages from sessionStorage", error);
-          return [];
-      }
+    try {
+      const saved = sessionStorage.getItem('ai-chat-messages');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
-
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState('auto');
-  const [pastChats, setPastChats] = useState([]);
-  const [showPastChats, setShowPastChats] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
-
   const agents = [
     { id: 'auto', name: 'Auto', description: 'Automatically choose the best agent' },
     { id: 'perplexity', name: 'Perplexity', description: 'Fast and accurate responses' },
-    { id: 'gemini', name: 'Gemini Pro', description: 'Google\'s advanced AI model' },
-    { id: 'claude', name: 'Claude', description: 'Anthropic\'s helpful assistant' },
-    { id: 'gpt4', name: 'GPT-4', description: 'OpenAI\'s most capable model' }
+    { id: 'gemini', name: 'Gemini Pro', description: "Google's advanced AI model" },
+    { id: 'cohere', name: 'Cohere', description: "Cohere's command model" },
+    { id: 'groq', name: 'Groq', description: "Fast inference with Llama 3" },
+    { id: 'claude', name: 'Claude', description: "Anthropic's helpful assistant" },
+    { id: 'gpt4', name: 'GPT-4', description: "OpenAI's most capable model" }
   ];
-  
-  useEffect(() => {
-    if (document.querySelector('script[src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"]')) {
-        return;
-    }
-
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css';
-    document.head.appendChild(link);
-
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js';
-    script.async = true;
-    document.body.appendChild(script);
-
-    return () => {
-      if (document.head.contains(link)) document.head.removeChild(link);
-      if (document.body.contains(script)) document.body.removeChild(script);
-    };
-  }, []);
 
   useEffect(() => {
-      try {
-        sessionStorage.setItem('ai-chat-messages', JSON.stringify(messages));
-      } catch (error) {
-          console.error("Could not save messages to sessionStorage", error);
-      }
-  }, [messages]);
-
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  };
-
-  useEffect(() => {
-    // Ensure scrolling happens after DOM updates
-    setTimeout(() => {
-      scrollToBottom();
-    }, 100);
-  }, [messages]);
-  
-  // Handle scroll position when new messages are added
-  useEffect(() => {
-    const messagesContainer = document.querySelector('.ai-messages');
-    if (!messagesContainer) return;
-    
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = messagesContainer;
-      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
-      
-      if (isAtBottom) {
-        messagesContainer.setAttribute('data-at-bottom', 'true');
-      } else {
-        messagesContainer.removeAttribute('data-at-bottom');
-      }
-    };
-    
-    messagesContainer.addEventListener('scroll', handleScroll);
-    return () => messagesContainer.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus();
+    if (!document.querySelector('script[src*="highlight.min.js"]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css';
+      document.head.appendChild(link);
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js';
+      script.async = true;
+      document.body.appendChild(script);
+      return () => {
+        if (document.head.contains(link)) document.head.removeChild(link);
+        if (document.body.contains(script)) document.body.removeChild(script);
+      };
     }
   }, []);
 
+  useEffect(() => {
+    sessionStorage.setItem('ai-chat-messages', JSON.stringify(messages));
+  }, [messages]);
+
+  useEffect(() => {
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({behavior:'smooth', block: 'end'}), 80);
+  }, [messages, isLoading]);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
-
-    const userMessage = {
+    const userMsg = {
       id: Date.now(),
       type: 'user',
       content: inputValue,
       timestamp: new Date().toLocaleTimeString()
     };
-
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => [...prev, userMsg]);
     setInputValue('');
     setIsLoading(true);
-
-    // --- REAL API CALL ---
-    // This now calls your backend which will return the structured response.
     try {
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: inputValue,
           agent: selectedAgent,
-          context: {
-            currentFile,
-            currentCode,
-            workspace
-          }
-        }),
+          context: { currentFile, currentCode, workspace }
+        })
       });
-
       const data = await response.json();
-      
       if (data.success) {
-        const aiMessage = {
-          id: Date.now() + 1,
-          type: 'ai',
-          content: data.response,
-          // The backend provides this array based on its extraction logic
-          codeChanges: data.codeChanges || [], 
-          suggestions: data.suggestions,
-          timestamp: new Date().toLocaleTimeString()
-        };
-
-        setMessages(prev => [...prev, aiMessage]);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: Date.now() + 1,
+            type: 'ai',
+            content: data.response,
+            codeChanges: data.codeChanges || [],
+            suggestions: data.suggestions,
+            changesApplied: data.changesApplied || false,
+            timestamp: new Date().toLocaleTimeString()
+          }
+        ]);
       } else {
-        const errorMessage = {
-          id: Date.now() + 1,
-          type: 'error',
-          content: data.error || 'Failed to get response from AI',
-          timestamp: new Date().toLocaleTimeString()
-        };
-        setMessages(prev => [...prev, errorMessage]);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: Date.now() + 2,
+            type: 'error',
+            content: data.error || 'Failed to get response from AI.',
+            timestamp: new Date().toLocaleTimeString()
+          }
+        ]);
       }
     } catch (error) {
-      const errorMessage = {
-        id: Date.now() + 1,
-        type: 'error',
-        content: 'Network error. Please check your connection.',
-        timestamp: new Date().toLocaleTimeString()
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now() + 3,
+          type: 'error',
+          content: 'Network error. Please check your connection.',
+          timestamp: new Date().toLocaleTimeString()
+        }
+      ]);
     } finally {
       setIsLoading(false);
     }
   };
-  
-  // This function handles applying the code changes to the editor
+
+  // Applying code changes:
   const handleApplyChanges = (messageId, changes) => {
+    // Skip if changes were already applied automatically
+    const message = messages.find(msg => msg.id === messageId);
+    if (message && message.changesApplied) {
+      return;
+    }
+    
     changes.forEach(change => {
-        if (change.type === 'modify' && change.file === currentFile) {
-            onCodeChange(change.newContent); // This updates the code in the editor
-        } else if (change.type === 'create') {
-            onFileCreate(change.file, change.newContent);
-        }
+      if (change.type === 'modify' && change.file === currentFile) {
+        onCodeChange(change.newContent);
+      } else if (change.type === 'create') {
+        onFileCreate(change.file, change.newContent);
+      }
     });
-
-    // Update the message to remove the action buttons after applying.
-    setMessages(prevMessages => prevMessages.map(msg => 
-        msg.id === messageId ? { ...msg, changesApplied: true } : msg
-    ));
+    setMessages(prev =>
+      prev.map(msg => (msg.id === messageId ? { ...msg, changesApplied: true } : msg))
+    );
   };
-
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -347,159 +272,166 @@ const AIAssistant = ({
     }
   };
 
-  const handleAgentChange = (agentId) => {
-    setSelectedAgent(agentId);
-  };
-  
   const renderContent = (content) => {
     if (!content) return null;
-    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+    // Enhanced regex to handle code blocks with or without language specification
+    // and with different line break styles
+    const codeBlockRegex = /```([\w-]*)?\s*\n([\s\S]*?)```/g;
     const parts = [];
-    let lastIndex = 0;
-    let match;
-
+    let lastIndex = 0, match;
+    
     while ((match = codeBlockRegex.exec(content)) !== null) {
-        if (match.index > lastIndex) {
-            parts.push({ type: 'text', value: content.substring(lastIndex, match.index) });
-        }
-        parts.push({ type: 'code', language: match[1] || 'plaintext', value: match[2].trim() });
-        lastIndex = match.index + match[0].length;
+      if (match.index > lastIndex) {
+        parts.push({ type: 'text', value: content.substring(lastIndex, match.index) });
+      }
+      
+      // Extract language and code content
+      const language = match[1] ? match[1].trim() : 'plaintext';
+      const codeContent = match[2].trim();
+      
+      parts.push({ type: 'code', language, value: codeContent });
+      lastIndex = match.index + match[0].length;
     }
-
+    
     if (lastIndex < content.length) {
-        parts.push({ type: 'text', value: content.substring(lastIndex) });
+      parts.push({ type: 'text', value: content.substring(lastIndex) });
     }
-
-    return parts.map((part, index) => {
-        if (part.type === 'code') {
-            return <CodeBlock key={index} language={part.language} code={part.value} />;
-        }
-        return <div key={index} style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{part.value}</div>;
-    });
-  };
-
-
-  const renderMessage = (message) => {
-    return (
-      <div key={message.id} className={`message ${message.type}`}>
-        <div className="message-header">
-          <span className="message-author">
-            {message.type === 'user' ? 'You' : 'AI Assistant'}
-          </span>
-          <span className="message-time">{message.timestamp}</span>
-        </div>
-        <div className="message-content">
-          <div className="message-text">
-            {message.type === 'ai' ? renderContent(message.content) : message.content}
-          </div>
-
-          {/* This UI will now be populated by the live API response */}
-          {message.type === 'ai' && message.codeChanges && message.codeChanges.length > 0 && (
-            <div className="code-changes-container" style={{ border: '1px solid #444', borderRadius: 8, marginTop: 16 }}>
-                <div style={{padding: '8px 12px', background: '#2d2d30', borderBottom: '1px solid #444'}}>
-                    <h4 style={{margin: 0, fontSize: 13, color: '#00aeff'}}>AI Code Changes</h4>
-                </div>
-                <div style={{padding: '12px'}}>
-                    {message.codeChanges.map((change, index) => (
-                        <div key={index} className="code-change-item" style={{fontSize: 13, marginBottom: 4}}>
-                            <span style={{
-                                background: change.type === 'modify' ? '#3a3d99' : '#2d7a4b', 
-                                padding: '2px 6px', 
-                                borderRadius: 4, 
-                                marginRight: 8,
-                                fontSize: 12
-                            }}>{change.type.toUpperCase()}</span>
-                            <span>{change.file}</span>
-                        </div>
-                    ))}
-                </div>
-                {!message.changesApplied && (
-                    <div className="code-changes-actions" style={{padding: '8px 12px', borderTop: '1px solid #444', display: 'flex', gap: 12}}>
-                        <button 
-                            onClick={() => handleApplyChanges(message.id, message.codeChanges)}
-                            style={{background: '#2d7a4b', color: 'white', border: 'none', borderRadius: 5, padding: '6px 12px', cursor: 'pointer', fontSize: 13, fontWeight: 'bold'}}
-                        >
-                            Accept
-                        </button>
-                        <button 
-                            onClick={() => setMessages(prev => prev.map(msg => msg.id === message.id ? {...msg, changesApplied: true} : msg))}
-                            style={{background: '#666', color: 'white', border: 'none', borderRadius: 5, padding: '6px 12px', cursor: 'pointer', fontSize: 13}}
-                        >
-                            Reject
-                        </button>
-                    </div>
-                )}
-            </div>
-          )}
-          
-          {message.type === 'ai' && message.suggestions && (
-            <div className="suggestions">
-              <h4>Suggestions:</h4>
-              <ul>
-                {message.suggestions.map((suggestion, index) => (
-                  <li key={index}>{suggestion}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
+    
+    return parts.map((part, idx) =>
+      part.type === 'code'
+        ? <CodeBlock key={idx} language={part.language} code={part.value} />
+        : <div key={idx} style={{whiteSpace: 'pre-wrap', lineHeight: 1.7}}>{part.value}</div>
     );
   };
 
+  const renderMessage = (message) => (
+    <div key={message.id} className={`message ${message.type}`}>
+      <div className="message-header">
+        <span className="message-author">{message.type === 'user' ? 'You' : 'AI Assistant'}</span>
+        <span className="message-time">{message.timestamp}</span>
+      </div>
+      <div className="message-content">
+        <div className="message-text">
+          {message.type === 'ai' ? renderContent(message.content) : message.content}
+        </div>
+        {!!(message.type === 'ai' && message.codeChanges?.length) && (
+          <div className="code-changes-container" style={{
+            border: '1px solid #2e6296', borderRadius: 8, marginTop: 18, marginBottom: 10, background: '#1b2230'
+          }}>
+            <div style={{padding: '8px 12px', background: '#224365', borderTopLeftRadius: 8, borderTopRightRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+              <h4 style={{margin: 0, fontSize: 13, color: '#00aeff'}}>AI Code Changes</h4>
+              {message.changesApplied && (
+                <span style={{fontSize: 12, color: '#4ade80', fontWeight: 600, background: 'rgba(74, 222, 128, 0.15)', padding: '2px 8px', borderRadius: 4}}>
+                  ✓ Changes Applied
+                </span>
+              )}
+            </div>
+            <div style={{padding: '12px'}}>
+              {message.codeChanges.map((change, index) => (
+                <div key={index} style={{
+                  fontSize: 13, marginBottom: 4, display: 'flex', gap: 10, alignItems: 'center'
+                }}>
+                  <span style={{
+                    background: change.type === 'modify' ? '#5865f2' : '#3abb7f',
+                    padding: '2px 8px', borderRadius: 6, color: '#edf', fontSize: 12, minWidth: 48, textAlign: 'center'
+                  }}>{change.type.toUpperCase()}</span>
+                  <span style={{color:'#a1eaff'}}>{change.file}</span>
+                </div>
+              ))}
+            </div>
+            {!message.changesApplied && (
+              <div style={{padding: '8px 12px', borderTop: '1px solid #224365', display:'flex', gap:12, background:'#243c52', borderBottomLeftRadius:8, borderBottomRightRadius:8}}>
+                <button
+                  onClick={() => handleApplyChanges(message.id, message.codeChanges)}
+                  disabled={message.changesApplied}
+                  style={{
+                    background: message.changesApplied ? '#5a6172' : '#22b77f', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: 5,
+                    padding: '7px 16px', 
+                    cursor: message.changesApplied ? 'default' : 'pointer', 
+                    fontSize: 13, 
+                    fontWeight: 'bold',
+                    opacity: message.changesApplied ? 0.6 : 1
+                  }}
+                >Accept</button>
+                <button
+                  onClick={() => setMessages(prev => prev.map(msg => msg.id === message.id ? {...msg, changesApplied: true} : msg))}
+                  disabled={message.changesApplied}
+                  style={{
+                    background: message.changesApplied ? '#5a6172' : '#aaa', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: 5,
+                    padding: '7px 16px', 
+                    cursor: message.changesApplied ? 'default' : 'pointer', 
+                    fontSize: 13,
+                    opacity: message.changesApplied ? 0.6 : 1
+                  }}
+                >Reject</button>
+              </div>
+            )}
+          </div>
+        )}
+        {message.type === 'ai' && message.suggestions && (
+          <div className="suggestions" style={{
+            background:'#1b2230', borderLeft:'3px solid #22b77f', borderRadius:8, margin:'10px 0 0 0', padding:'8px 12px'
+          }}>
+            <h4 style={{margin:0, color:'#22b77f', fontSize:13}}>Suggestions:</h4>
+            <ul style={{margin:0, paddingLeft:16, fontSize:13, color:'#aad'}}>
+              {message.suggestions.map((suggestion, i) => <li key={i}>{suggestion}</li>)}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="ai-assistant-panel" style={{ 
-      height: '100%', 
-      display: 'flex', 
-      flexDirection: 'column',
-      background: '#252526',
-      color: '#cccccc'
+    <div className="ai-assistant-panel" style={{
+      height:'100%', display:'flex', flexDirection:'column', background:'#222932', color:'#dde4ed'
     }}>
       {/* AI Assistant Header */}
       <div style={{
-        padding: '12px 16px',
-        borderBottom: '1px solid #3e3e3e',
-        background: '#2d2d30',
+        padding: '12px 16px 12px',
+        borderBottom: '1px solid #3977d8',
+        background: 'linear-gradient(90deg, #1e2a3a 20%, #222932 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          <svg width="26" height="26" fill="none" stroke="#6ce0f0" strokeWidth="2.2" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="3.5" style={{fill:'#22b77f'}} />
           </svg>
-          <span style={{ fontWeight: 600, fontSize: 14 }}>AI Assistant</span>
+          <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '.03em' }}>AI Assistant</span>
         </div>
         <div className="agent-selector">
-          <select 
-            value={selectedAgent} 
-            onChange={(e) => handleAgentChange(e.target.value)}
+          <select
+            value={selectedAgent}
+            onChange={e => setSelectedAgent(e.target.value)}
             className="agent-select"
             style={{
-              background: '#3c3c3c',
-              border: '1px solid #464647',
-              color: '#cccccc',
-              padding: '4px 8px',
-              borderRadius: 4,
-              fontSize: 12
+              background: '#2a3143', border: '1px solid #245282', color: '#aad', padding: '5px 10px',
+              borderRadius: 5, fontSize: 12, fontWeight: 600
             }}
           >
             {agents.map(agent => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}
-              </option>
+              <option key={agent.id} value={agent.id}>{agent.name}</option>
             ))}
           </select>
         </div>
       </div>
-
       {/* Messages Area */}
-      <div className="ai-messages" style={{ 
-        flex: 1, 
-        overflow: 'auto', 
-        padding: '16px',
+      <div className="ai-messages" style={{
+        flex: 1,
+        overflow: 'auto',
+        padding: '18px 16px 12px',
         display: 'flex',
-        flexDirection: 'column'
+        flexDirection: 'column',
+        background: 'linear-gradient(135deg, #21263a 0%, #181e28 100%)'
       }}>
         {messages.length === 0 ? (
           <div className="empty-state" style={{
@@ -508,60 +440,58 @@ const AIAssistant = ({
             alignItems: 'center',
             justifyContent: 'center',
             flex: 1,
+            minHeight:300,
             textAlign: 'center',
-            color: '#888'
+            color: '#9ad3f4'
           }}>
-            <div className="empty-icon" style={{ marginBottom: 16 }}>
-              <svg width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            <div className="empty-icon" style={{ marginBottom: 18 }}>
+              <svg width="54" height="54" fill="none" stroke="#51a2e9" strokeWidth="1.5" viewBox="0 0 24 24">
+                <rect x="2" y="2" width="20" height="20" rx="3" />
+                <circle cx="8" cy="10" r="1.1" />
+                <circle cx="16" cy="10" r="1.1" />
+                <path d="M8 15c.95.66 2.18 1 3.5 1s2.55-.34 3.5-1" />
               </svg>
             </div>
-            <h3 style={{ margin: '0 0 8px 0', fontSize: 16, color: '#ddd' }}>Start a conversation</h3>
-            <p style={{ margin: 0, fontSize: 14 }}>Ask me to help with your code, explain concepts, or suggest improvements.</p>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: 17, color: '#ffe' }}>Start a conversation</h3>
+            <p style={{ margin:0, fontSize:14, color:'#aad' }}>Ask me for code help, explanations, or suggestions.</p>
           </div>
         ) : (
           <>
             {messages.map(renderMessage)}
             {isLoading && (
               <div className="message ai loading" style={{
-                marginBottom: 16,
-                padding: 12,
-                background: '#2d2d30',
-                borderRadius: 8
+                margin: '12px 0 12px 0',
+                padding: 18,
+                background: 'rgba(30,48,82,0.22)',
+                borderRadius: 10,
+                border: '1px solid #233a56',
+                boxShadow: '0 4px 10px #1742af12'
               }}>
                 <div className="message-header" style={{
                   display: 'flex',
                   justifyContent: 'space-between',
-                  marginBottom: 8,
+                  marginBottom: 10,
                   fontSize: 12,
-                  color: '#888'
+                  color: '#66c'
                 }}>
                   <span className="message-author">AI Assistant</span>
                   <span className="message-time">Thinking...</span>
                 </div>
                 <div className="message-content">
-                  <div className="loading-dots" style={{ display: 'flex', gap: 4 }}>
-                    <span style={{ 
-                      width: 6, 
-                      height: 6, 
-                      background: '#888', 
-                      borderRadius: '50%',
-                      animation: 'pulse 1.5s infinite'
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center', height: 18 }}>
+                    <span style={{
+                      width: 8, height: 8, background: '#3dc8e8',
+                      borderRadius: '50%', animation: 'opacityPulse 1.5s infinite alternate', display: 'inline-block'
                     }}></span>
-                    <span style={{ 
-                      width: 6, 
-                      height: 6, 
-                      background: '#888', 
-                      borderRadius: '50%',
-                      animation: 'pulse 1.5s infinite 0.5s'
+                    <span style={{
+                      width: 8, height: 8, background: '#70efac',
+                      borderRadius: '50%', animation: 'opacityPulse 1.5s infinite .2s alternate', display: 'inline-block'
                     }}></span>
-                    <span style={{ 
-                      width: 6, 
-                      height: 6, 
-                      background: '#888', 
-                      borderRadius: '50%',
-                      animation: 'pulse 1.5s infinite 1s'
+                    <span style={{
+                      width: 8, height: 8, background: '#51a2e9',
+                      borderRadius: '50%', animation: 'opacityPulse 1.5s infinite .4s alternate', display: 'inline-block'
                     }}></span>
+                    <span style={{marginLeft: 10, color:'#67d', fontSize:14, letterSpacing:1}}>Composing…</span>
                   </div>
                 </div>
               </div>
@@ -570,58 +500,55 @@ const AIAssistant = ({
         )}
         <div ref={messagesEndRef} />
       </div>
-
       {/* Input Area */}
       <div style={{
-        padding: '16px',
-        borderTop: '1px solid #3e3e3e',
-        background: '#2d2d30'
+        padding: '18px 16px 16px',
+        borderTop: '1px solid #171d2c',
+        background: 'linear-gradient(90deg, #222932 70%, #25334b 100%)'
       }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
           <textarea
             ref={inputRef}
             value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
+            onChange={e => setInputValue(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask me anything about your code..."
+            placeholder="Ask me anything about your code…"
             style={{
               flex: 1,
-              background: '#3c3c3c',
-              border: '1px solid #464647',
-              color: '#cccccc',
-              padding: '8px 12px',
-              borderRadius: 6,
+              background: '#232e3b',
+              border: '1.3px solid #2463aa',
+              color: '#dde4ed',
+              borderRadius: 7,
+              minHeight: 38,
+              maxHeight: 109,
+              fontSize: 15,
+              padding: '9px 13px',
+              boxShadow: '0 1px 6px #2463aa30',
               resize: 'none',
-              fontSize: 14,
-              minHeight: 36,
-              maxHeight: 120,
               outline: 'none'
             }}
-            rows="1"
+            rows={1}
+            disabled={isLoading}
           />
-          <button 
+          <button
             className="send-btn"
             onClick={handleSendMessage}
             disabled={isLoading || !inputValue.trim()}
             style={{
-              background: !inputValue.trim() || isLoading ? '#464647' : '#0078d4',
+              background: !inputValue.trim() || isLoading ? '#464647' : 'linear-gradient(132deg,#51a2e9 0%, #17eaaa 95%)',
               border: 'none',
               color: '#fff',
-              padding: '8px 12px',
+              fontWeight: 700,
+              padding: '9px 18px',
               borderRadius: 6,
               cursor: !inputValue.trim() || isLoading ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              minWidth: 36,
-              height: 36
+              fontSize: 17,
+              boxShadow: !inputValue.trim() || isLoading ? 'none' : '0 2px 8px #51a2e94a'
             }}
             title="Send (Enter)"
-          >
-            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H.5a.5.5 0 0 0 0 1h13.793l-2.147 2.146a.5.5 0 0 0 .708.708l3-3z"/>
-            </svg>
-          </button>
+          >▶</button>
         </div>
       </div>
     </div>
@@ -629,3 +556,13 @@ const AIAssistant = ({
 };
 
 export default AIAssistant;
+
+// Add this CSS globally for the loading dots animation:
+/*
+@keyframes opacityPulse {
+  0% {opacity: .7;}
+  80% {opacity: 1;}
+  100% {opacity: .6;}
+}
+*/
+

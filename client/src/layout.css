@@ -271,6 +271,52 @@ body, html, #root {
   z-index: 2;
 }
 
+.go-live-toolbar {
+  display: flex;
+  align-items: center;
+  margin-right: 16px;
+}
+
+.status-bar-btn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.status-bar-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.status-bar-btn.go-live {
+  background: linear-gradient(to right, #4fc3f7, #2196f3);
+  color: #fff;
+}
+
+.status-bar-btn.go-live:hover:not(:disabled) {
+  background: linear-gradient(to right, #81d4fa, #42a5f5);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
+}
+
+.status-bar-btn.stop-live {
+  background: linear-gradient(to right, #ff5252, #f44336);
+  color: #fff;
+}
+
+.status-bar-btn.stop-live:hover:not(:disabled) {
+  background: linear-gradient(to right, #ff8a80, #ef5350);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(244, 67, 54, 0.3);
+}
+
 .settings-menu {
   position: absolute;
   left: 60px;
@@ -300,4 +346,4 @@ body, html, #root {
   height: 1px;
   background: #222;
   margin: 4px 0;
-} 
+}
