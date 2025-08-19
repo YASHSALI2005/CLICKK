@@ -146,8 +146,21 @@ const AIAssistant = ({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState('auto');
+  const [showHistory, setShowHistory] = useState(false);
+  const [chatHistory, setChatHistory] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ai-chat-history');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
   const agents = [
     { id: 'auto', name: 'Auto', description: 'Automatically choose the best agent' },
     { id: 'perplexity', name: 'Perplexity', description: 'Fast and accurate responses' },
@@ -175,8 +188,29 @@ const AIAssistant = ({
     }
   }, []);
 
-  useEffect(() => {
+ useEffect(() => {
     sessionStorage.setItem('ai-chat-messages', JSON.stringify(messages));
+    scrollToBottom();
+    
+    // Save chat to history when a new conversation starts or ends
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.type === 'ai') {
+        const chatTitle = messages[0]?.content?.substring(0, 30) + '...' || 'Chat';
+        const newChat = {
+          id: Date.now().toString(),
+          title: chatTitle,
+          timestamp: new Date().toLocaleString(),
+          messages: [...messages]
+        };
+        
+        setChatHistory(prev => {
+          const updated = [newChat, ...prev.filter(chat => chat.id !== newChat.id)].slice(0, 10);
+          localStorage.setItem('ai-chat-history', JSON.stringify(updated));
+          return updated;
+        });
+      }
+    }
   }, [messages]);
 
   useEffect(() => {
@@ -408,22 +442,90 @@ const AIAssistant = ({
           </svg>
           <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '.03em' }}>AI Assistant</span>
         </div>
-        <div className="agent-selector">
-          <select
-            value={selectedAgent}
-            onChange={e => setSelectedAgent(e.target.value)}
-            className="agent-select"
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button 
+            onClick={() => setMessages([])} 
+            title="New Chat"
             style={{
-              background: '#2a3143', border: '1px solid #245282', color: '#aad', padding: '5px 10px',
-              borderRadius: 5, fontSize: 12, fontWeight: 600
+              background: 'linear-gradient(135deg, #51a2e9 0%, #17eaaa 95%)',
+              border: 'none',
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(81, 162, 233, 0.4)',
+              transition: 'all 0.2s ease'
             }}
           >
-            {agents.map(agent => (
-              <option key={agent.id} value={agent.id}>{agent.name}</option>
-            ))}
-          </select>
+            <svg width="14" height="14" fill="white" viewBox="0 0 24 24">
+              <path d="M12 4v16m-8-8h16" stroke="white" strokeWidth="3" strokeLinecap="round"/>
+            </svg>
+          </button>
+          <button 
+            className="history-button"
+            onClick={() => setShowHistory(!showHistory)} 
+            title="Chat History"
+          >
+            <svg width="14" height="14" fill="white" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" fill="none" stroke="white" strokeWidth="2" />
+              <polyline points="12 6 12 12 16 14" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
+          <div className="agent-selector">
+            <select
+              value={selectedAgent}
+              onChange={e => setSelectedAgent(e.target.value)}
+              className="agent-select"
+              style={{
+                background: 'linear-gradient(135deg, #2a3143 0%, #1e2a3a 100%)', 
+                border: '1px solid #245282', 
+                color: '#aad', 
+                padding: '5px 10px',
+                borderRadius: 5, 
+                fontSize: 12, 
+                fontWeight: 600,
+                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)',
+                cursor: 'pointer'
+              }}
+            >
+              {agents.map(agent => (
+                <option key={agent.id} value={agent.id}>{agent.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
+      
+      {showHistory && (
+        <div className="chat-history-panel">
+          <div className="chat-history-header">
+            <h3>Chat History</h3>
+            <button onClick={() => setShowHistory(false)}>×</button>
+          </div>
+          <div className="chat-history-list">
+            {chatHistory.length === 0 ? (
+              <div className="no-history">No chat history found</div>
+            ) : (
+              chatHistory.map(chat => (
+                <div 
+                  key={chat.id} 
+                  className="chat-history-item"
+                  onClick={() => {
+                    setMessages(chat.messages);
+                    setShowHistory(false);
+                  }}
+                >
+                  <div className="chat-history-title">{chat.title}</div>
+                  <div className="chat-history-timestamp">{chat.timestamp}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
       {/* Messages Area */}
       <div className="ai-messages" style={{
         flex: 1,

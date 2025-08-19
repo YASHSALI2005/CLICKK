@@ -280,49 +280,125 @@ app.post('/api/new-workspace', (req, res) => {
 //     // No tempDir to clean up
 //   });
 // });
-// server.js
-const { spawn } = require('child_process');
-
+// WebSocket server for terminal and file explorer
 const wss = new WebSocket.Server({ port: 8081 });
+
+// Store connected clients by workspace
+const clients = new Map();
+
+// Function to notify clients about file changes
+function notifyFileChange(workspace, type = 'fileChange') {
+  if (!clients.has(workspace)) return;
+  
+  const workspaceClients = clients.get(workspace);
+  // Notify all explorer clients
+  if (workspaceClients.has('explorer')) {
+    workspaceClients.get('explorer').forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ type, timestamp: Date.now() }));
+      }
+    });
+  }
+}
 
 wss.on('connection', function connection(ws, req) {
   const url = require('url');
   const query = url.parse(req.url, true).query;
   const workspace = query.workspace || 'demo';
+  const clientType = query.type || 'terminal';
   const cwd = path.join(__dirname, 'projects', workspace);
+
+  // Store client connection by workspace and type
+  if (!clients.has(workspace)) {
+    clients.set(workspace, new Map());
+  }
+  const workspaceClients = clients.get(workspace);
+  
+  if (!workspaceClients.has(clientType)) {
+    workspaceClients.set(clientType, new Set());
+  }
+  workspaceClients.get(clientType).add(ws);
+
+  // Log connection for debugging
+  console.log(`WebSocket client connected: workspace=${workspace}, type=${clientType}`);
 
   // Ensure workspace directory exists
   if (!fs.existsSync(cwd)) fs.mkdirSync(cwd, { recursive: true });
 
-  // Use cmd.exe on Windows, bash otherwise
-  const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
-  const ptyProcess = pty.spawn(shell, [], {
-    name: 'xterm-color',
-    cols: 80,
-    rows: 30,
-    cwd,
-    env: process.env,
-  });
+  // For terminal clients, set up the terminal process
+  if (clientType === 'terminal') {
+    // Use cmd.exe on Windows, bash otherwise
+    const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
+    const ptyProcess = pty.spawn(shell, [], {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 30,
+      cwd,
+      env: process.env,
+    });
 
-  // Send shell output to client
-  ptyProcess.on('data', function(data) {
-    ws.send(data);
-  });
+    // Send shell output to client
+    ptyProcess.on('data', function(data) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
+      }
+    });
 
-  // Error handler to prevent crash on EPIPE
-  ptyProcess.on('error', (err) => {
-    console.error('PTY error:', err);
-  });
+    // Error handler to prevent crash on EPIPE
+    ptyProcess.on('error', (err) => {
+      console.error('PTY error:', err);
+    });
 
-  // Receive input from client
-  ws.on('message', function incoming(message) {
-    ptyProcess.write(message);
-  });
+    // Receive input from client
+    ws.on('message', function incoming(message) {
+      // Check if it's a special command
+      if (typeof message === 'string' && message.startsWith('CMD:')) {
+        // Handle special commands
+      } else {
+        // Normal terminal input
+        ptyProcess.write(message);
+      }
+    });
 
-  ws.on('close', () => {
-    ptyProcess.kill();
-  });
+    ws.on('close', () => {
+      ptyProcess.kill();
+      // Remove client from the list
+      if (clients.has(workspace)) {
+        const workspaceClients = clients.get(workspace);
+        if (workspaceClients.has(clientType)) {
+          workspaceClients.get(clientType).delete(ws);
+          console.log(`WebSocket client disconnected: workspace=${workspace}, type=${clientType}`);
+        }
+      }
+    });
+  } else {
+    // For file explorer clients, just handle close event
+    ws.on('close', () => {
+      // Remove client from the list
+      if (clients.has(workspace)) {
+        const workspaceClients = clients.get(workspace);
+        if (workspaceClients.has(clientType)) {
+          workspaceClients.get(clientType).delete(ws);
+        }
+      }
+    });
+  }
 });
+
+// Function to notify clients about file changes
+function notifyFileChange(workspace, type = 'fileChange') {
+  if (!clients.has(workspace)) return;
+  
+  const workspaceClients = clients.get(workspace);
+  // Notify all explorer clients
+  if (workspaceClients.has('explorer')) {
+    workspaceClients.get('explorer').forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ type, timestamp: Date.now() }));
+      }
+    });
+  }
+}
 
 // AI Chat endpoint
 app.post('/api/ai/chat', async (req, res) => {
@@ -341,6 +417,8 @@ app.post('/api/ai/chat', async (req, res) => {
     // Automatically apply code changes if present
     if (result.success && result.codeChanges && result.codeChanges.length > 0) {
       const projectRoot = getProjectRoot(req);
+      const createdFiles = [];
+      const modifiedFiles = [];
       
       // Process each code change
       for (const change of result.codeChanges) {
@@ -355,6 +433,7 @@ app.post('/api/ai/chat', async (req, res) => {
           // Write the modified content to the file
           fs.writeFileSync(filePath, change.newContent);
           console.log(`Modified file: ${change.file}`);
+          modifiedFiles.push(change.file);
         } 
         else if (change.type === 'create') {
           // Ensure directory exists for the file
@@ -365,11 +444,30 @@ app.post('/api/ai/chat', async (req, res) => {
           // Create the new file with the provided content
           fs.writeFileSync(filePath, change.newContent);
           console.log(`Created file: ${change.file}`);
+          createdFiles.push(change.file);
         }
       }
       
       // Add a flag to indicate changes were automatically applied
       result.changesApplied = true;
+      result.createdFiles = createdFiles;
+      result.modifiedFiles = modifiedFiles;
+      
+      // Add a message about created files to the response
+      if (createdFiles.length > 0 || modifiedFiles.length > 0) {
+        let fileMessage = '';
+        if (createdFiles.length > 0) {
+          fileMessage += `\n\n✅ Created ${createdFiles.length} file(s): ${createdFiles.join(', ')}`;
+        }
+        if (modifiedFiles.length > 0) {
+          fileMessage += `\n\n✅ Modified ${modifiedFiles.length} file(s): ${modifiedFiles.join(', ')}`;
+        }
+        result.response += fileMessage;
+        
+        // Notify clients about file changes
+        const workspace = req.query.workspace || req.body.workspace || 'demo';
+        notifyFileChange(workspace);
+      }
     }
     
     res.json(result);

@@ -123,7 +123,7 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     return !!params.get('workspace');
   });
-  const [showTerminal, setShowTerminal] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(true);
   const [liveStatus, setLiveStatus] = useState({ running: false, message: '' });
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
@@ -161,10 +161,36 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Fetch files initially
+    fetchFiles();
+    
+    // Set up WebSocket connection for file explorer updates
+    const wsUrl = `ws://localhost:8081?workspace=${encodeURIComponent(workspace)}&type=explorer`;
+    const socket = new window.WebSocket(wsUrl);
+    
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'fileChange') {
+          console.log('File change detected, refreshing file list');
+          fetchFiles();
+        }
+      } catch (e) {
+        // Ignore non-JSON messages (terminal output)
+      }
+    };
+    
+    return () => {
+      socket.close();
+    };
+  }, [workspace]);
+  
+  // Function to fetch files
+  const fetchFiles = () => {
     axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
       setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
     });
-  }, [workspace]);
+  };
   
   // Add document click handler to close context menus
   useEffect(() => {
@@ -800,9 +826,13 @@ export default function App() {
     setIsSplitView(false); // Always add a new terminal in single view
     setShowTerminal(true);
     setTerminals(prev => {
-        const newId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 1;
-        setActiveTerminal(newId);
-        return [...prev, { id: newId, title: `powershell` }];
+        // If there are no terminals, create one, otherwise use the existing one
+        if (prev.length === 0) {
+            const newId = 1;
+            setActiveTerminal(newId);
+            return [{ id: newId, title: `terminal` }];
+        }
+        return prev;
     });
   };
 
@@ -1070,7 +1100,10 @@ export default function App() {
                                 className={`terminal-list-item ${term.id === activeTerminal ? 'active' : ''}`}
                                 onClick={() => handleSetActiveTerminal(term.id)}
                             >
-                                {`${index + 1}: ${term.title}`}
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" style={{marginRight: '8px'}}>
+                                    <path d="M20,19V7H4V19H20M20,3A2,2 0 0,1 22,5V19A2,2 0 0,1 20,21H4A2,2 0 0,1 2,19V5C2,3.89 2.9,3 4,3H20M13,17V15H18V17H13M9.58,13L5.57,9H8.4L11.7,12.3C12.09,12.69 12.09,13.33 11.7,13.72L8.42,17H5.59L9.58,13Z" fill="#75beff"/>
+                                </svg>
+                                {`${index + 1}`}
                             </div>
                         ))}
                     </div>
