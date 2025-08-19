@@ -123,7 +123,7 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     return !!params.get('workspace');
   });
-  const [showTerminal, setShowTerminal] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(true);
   const [liveStatus, setLiveStatus] = useState({ running: false, message: '' });
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
@@ -307,10 +307,53 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Fetch files initially
+    fetchFiles();
+    
+    // Set up WebSocket connection for file explorer updates
+    const wsUrl = `ws://localhost:8081?workspace=${encodeURIComponent(workspace)}&type=explorer`;
+    const socket = new window.WebSocket(wsUrl);
+    
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'fileChange') {
+          console.log('File change detected, refreshing file list');
+          fetchFiles();
+        }
+      } catch (e) {
+        // Ignore non-JSON messages (terminal output)
+      }
+    };
+    
+    return () => {
+      socket.close();
+    };
+  }, [workspace]);
+  
+  // Function to fetch files
+  const fetchFiles = () => {
     axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
       setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
     });
-  }, [workspace]);
+  };
+  
+  // Add document click handler to close context menus
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Check if click is outside of context menus
+      const isContextMenuClick = event.target.closest('[data-context-menu="true"]');
+      if (!isContextMenuClick) {
+        setFolderMenu({ path: null, anchor: null });
+        setFileMenu({ path: null, anchor: null });
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Load saved theme on app start
   useEffect(() => {
@@ -550,19 +593,21 @@ export default function App() {
                     {name}
                   </div>
                   {folderMenu.path === fullPath && folderMenu.anchor && (
-                    <div style={{
-                      position: 'fixed',
-                      left: folderMenu.anchor.x,
-                      top: folderMenu.anchor.y,
-                      background: '#23272e',
-                      color: '#fff',
-                      borderRadius: 6,
-                      boxShadow: '0 2px 12px #0008',
-                      minWidth: 120,
-                      zIndex: 1000,
-                      border: '1px solid #222',
-                      padding: '4px 0',
-                    }}
+                    <div 
+                      data-context-menu="true"
+                      style={{
+                        position: 'fixed',
+                        left: folderMenu.anchor.x,
+                        top: folderMenu.anchor.y,
+                        background: '#23272e',
+                        color: '#fff',
+                        borderRadius: 6,
+                        boxShadow: '0 2px 12px #0008',
+                        minWidth: 120,
+                        zIndex: 1000,
+                        border: '1px solid #222',
+                        padding: '4px 0',
+                      }}
                       onClick={e => e.stopPropagation()}
                     >
                       <div
@@ -579,6 +624,30 @@ export default function App() {
                           setFolderMenu({ path: null, anchor: null });
                         }}
                       >New Folder</div>
+                      <div
+                         style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333' }}
+                         onClick={() => {
+                           setShowTerminal(true);
+                           // If there are no terminals, create one
+                           if (terminals.length === 0) {
+                             const newId = 1;
+                             setTerminals([{ id: newId, title: 'powershell' }]);
+                             setActiveTerminal(newId);
+                             // Need to wait for terminal to initialize before sending command
+                             setTimeout(() => {
+                               const term = terminalRefs.current.get(newId);
+                               if (term) term.writeToTerminal(`cd "${fullPath}"
+`);
+                             }, 500);
+                           } else {
+                             // Use existing terminal
+                             const term = terminalRefs.current.get(activeTerminal);
+                             if (term) term.writeToTerminal(`cd "${fullPath}"
+`);
+                           }
+                           setFolderMenu({ path: null, anchor: null });
+                         }}
+                       >Open in Integrated Terminal</div>
                       <div
                         style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
                         onClick={() => {
@@ -613,19 +682,21 @@ export default function App() {
                   </span>
                   {name}
                   {fileMenu.path === fullPath && fileMenu.anchor && (
-                    <div style={{
-                      position: 'fixed',
-                      left: fileMenu.anchor.x,
-                      top: fileMenu.anchor.y,
-                      background: '#23272e',
-                      color: '#fff',
-                      borderRadius: 6,
-                      boxShadow: '0 2px 12px #0008',
-                      minWidth: 120,
-                      zIndex: 1000,
-                      border: '1px solid #222',
-                      padding: '4px 0',
-                    }}
+                    <div 
+                      data-context-menu="true"
+                      style={{
+                        position: 'fixed',
+                        left: fileMenu.anchor.x,
+                        top: fileMenu.anchor.y,
+                        background: '#23272e',
+                        color: '#fff',
+                        borderRadius: 6,
+                        boxShadow: '0 2px 12px #0008',
+                        minWidth: 120,
+                        zIndex: 1000,
+                        border: '1px solid #222',
+                        padding: '4px 0',
+                      }}
                       onClick={e => e.stopPropagation()}
                     >
                       <div
@@ -1015,9 +1086,13 @@ export default function App() {
     setIsSplitView(false); // Always add a new terminal in single view
     setShowTerminal(true);
     setTerminals(prev => {
-        const newId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 1;
-        setActiveTerminal(newId);
-        return [...prev, { id: newId, title: `powershell` }];
+        // If there are no terminals, create one, otherwise use the existing one
+        if (prev.length === 0) {
+            const newId = 1;
+            setActiveTerminal(newId);
+            return [{ id: newId, title: `terminal` }];
+        }
+        return prev;
     });
   };
 
@@ -1379,7 +1454,10 @@ export default function App() {
                                 className={`terminal-list-item ${term.id === activeTerminal ? 'active' : ''}`}
                                 onClick={() => handleSetActiveTerminal(term.id)}
                             >
-                                {`${index + 1}: ${term.title}`}
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" style={{marginRight: '8px'}}>
+                                    <path d="M20,19V7H4V19H20M20,3A2,2 0 0,1 22,5V19A2,2 0 0,1 20,21H4A2,2 0 0,1 2,19V5C2,3.89 2.9,3 4,3H20M13,17V15H18V17H13M9.58,13L5.57,9H8.4L11.7,12.3C12.09,12.69 12.09,13.33 11.7,13.72L8.42,17H5.59L9.58,13Z" fill="#75beff"/>
+                                </svg>
+                                {`${index + 1}`}
                             </div>
                         ))}
                     </div>
@@ -1410,7 +1488,7 @@ export default function App() {
       <div style={{
         position: 'fixed',
         left: 0,
-        right: 0,
+        right: isAIAssistantVisible ? '400px' : 0,
         bottom: 0,
         height: 36,
         background: '#23272e',
@@ -1420,25 +1498,29 @@ export default function App() {
         justifyContent: 'flex-end',
         padding: '0 24px',
         borderTop: '1px solid #333',
-        zIndex: 1001
+        zIndex: 1001,
+        transition: 'right 0.3s ease'
       }}>
-        <span style={{marginRight: 16, color: liveStatus.running ? '#4fc3f7' : '#aaa'}}>
-          {liveStatus.running ? `Port : 5500 (Live)` : 'Go Live stopped'}
-        </span>
-        <button
-          onClick={handleGoLive}
-          disabled={liveStatus.running}
-          className="status-bar-btn go-live"
-        >
-          Go Live
-        </button>
-        <button
-          onClick={handleStopLive}
-          disabled={!liveStatus.running}
-          className="status-bar-btn stop-live"
-        >
-          Stop Live
-        </button>
+       <div className="go-live-toolbar">
+  <span style={{marginRight: 16, color: liveStatus.running ? '#4fc3f7' : '#aaa'}}>
+    {liveStatus.running ? `Port : 5500 (Live)` : 'Go Live stopped'}
+  </span>
+  <button
+    onClick={handleGoLive}
+    disabled={liveStatus.running}
+    className="status-bar-btn go-live"
+  >
+    Go Live
+  </button>
+  <button
+    onClick={handleStopLive}
+    disabled={!liveStatus.running}
+    className="status-bar-btn stop-live"
+  >
+    Stop Live
+  </button>
+</div>
+
       </div>
       {showSettingsPanel && (
         <div className="modal-overlay" onClick={() => setShowSettingsPanel(false)}>

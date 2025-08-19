@@ -337,6 +337,41 @@ app.post('/api/ai/chat', async (req, res) => {
     }
 
     const result = await aiService.processMessage(message, agent || 'auto', context || {});
+    
+    // Automatically apply code changes if present
+    if (result.success && result.codeChanges && result.codeChanges.length > 0) {
+      const projectRoot = getProjectRoot(req);
+      
+      // Process each code change
+      for (const change of result.codeChanges) {
+        const filePath = path.join(projectRoot, change.file);
+        
+        if (change.type === 'modify') {
+          // Ensure directory exists for the file
+          const fileDir = path.dirname(filePath);
+          if (!fs.existsSync(fileDir)) {
+            fs.mkdirSync(fileDir, { recursive: true });
+          }
+          // Write the modified content to the file
+          fs.writeFileSync(filePath, change.newContent);
+          console.log(`Modified file: ${change.file}`);
+        } 
+        else if (change.type === 'create') {
+          // Ensure directory exists for the file
+          const fileDir = path.dirname(filePath);
+          if (!fs.existsSync(fileDir)) {
+            fs.mkdirSync(fileDir, { recursive: true });
+          }
+          // Create the new file with the provided content
+          fs.writeFileSync(filePath, change.newContent);
+          console.log(`Created file: ${change.file}`);
+        }
+      }
+      
+      // Add a flag to indicate changes were automatically applied
+      result.changesApplied = true;
+    }
+    
     res.json(result);
   } catch (error) {
     console.error('AI chat error:', error);
@@ -366,4 +401,4 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/build/index.html'));
 });
 
-app.listen(5000, () => console.log('Server running on http://localhost:5000')); 
+app.listen(5000, () => console.log('Server running on http://localhost:5000'));
