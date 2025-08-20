@@ -75,14 +75,15 @@
 
   /* Dropdown Styles */
   .dropdown-menu {
-    position: absolute;
+    position: fixed;
     top: 100%;
     left: 0;
     background-color: #252526;
     color: #ccc;
     min-width: 260px;
     border: 1px solid #333;
-    z-index: 999;
+    z-index: 100000;
+    isolation: isolate;
     padding: 4px 0;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
   }

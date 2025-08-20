@@ -13,24 +13,41 @@ const TerminalPanel = forwardRef((props, ref) => {
 
   useEffect(() => {
     const term = new Terminal({ 
-      fontSize: 14, 
+      fontSize: 13, 
       theme: { 
-        background: '#1e1e1e',
-        foreground: '#f0f0f0',
+        background: '#0c0c0c',
+        foreground: '#cccccc',
         cursor: '#ffffff',
-        selectionBackground: 'rgba(77, 151, 255, 0.3)',
-        black: '#000000',
-        red: '#ff5555',
-        green: '#50fa7b',
-        yellow: '#f1fa8c',
-        blue: '#bd93f9',
-        magenta: '#ff79c6',
-        cyan: '#8be9fd',
-        white: '#f8f8f2'
+        cursorAccent: '#000000',
+        selectionBackground: 'rgba(255, 255, 255, 0.3)',
+        black: '#0c0c0c',
+        red: '#c50f1f',
+        green: '#13a10e',
+        yellow: '#c19c00',
+        blue: '#0037da',
+        magenta: '#881798',
+        cyan: '#3a96dd',
+        white: '#cccccc',
+        brightBlack: '#767676',
+        brightRed: '#e74856',
+        brightGreen: '#16c60c',
+        brightYellow: '#f9f1a5',
+        brightBlue: '#3b78ff',
+        brightMagenta: '#b4009e',
+        brightCyan: '#61d6d6',
+        brightWhite: '#f2f2f2'
       },
       cursorBlink: true,
-      fontFamily: 'Consolas, "Courier New", monospace',
-      lineHeight: 1.2
+      cursorStyle: 'block',
+      fontFamily: 'Cascadia Code, Consolas, "Courier New", monospace',
+      fontWeight: 'normal',
+      fontWeightBold: 'bold',
+      lineHeight: 1.0,
+      letterSpacing: 0,
+      allowTransparency: true,
+      scrollback: 1000,
+      tabStopWidth: 4,
+      convertEol: true
     });
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -148,6 +165,11 @@ const TerminalPanel = forwardRef((props, ref) => {
   // Expose writeToTerminal to parent
   useImperativeHandle(ref, () => ({
     writeToTerminal: (text) => {
+      // Send the command through WebSocket to actually execute it
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(text);
+      }
+      // Also write to terminal display for immediate feedback
       if (termRef.current) {
         termRef.current.write(text);
       }
@@ -165,35 +187,6 @@ const TerminalPanel = forwardRef((props, ref) => {
 
   return (
     <div className="terminal-container">
-      <div className="terminal-tabs">
-        <div className="terminal-tab active">
-          <div className="terminal-tab-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24">
-              <path d="M20,19V7H4V19H20M20,3A2,2 0 0,1 22,5V19A2,2 0 0,1 20,21H4A2,2 0 0,1 2,19V5C2,3.89 2.9,3 4,3H20M13,17V15H18V17H13M9.58,13L5.57,9H8.4L11.7,12.3C12.09,12.69 12.09,13.33 11.7,13.72L8.42,17H5.59L9.58,13Z" />
-            </svg>
-          </div>
-          <div className="terminal-tab-title">Terminal</div>
-        </div>
-        <div className="terminal-tab-actions">
-          <div className="terminal-tab-action">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
-          </div>
-          <div className="terminal-tab-action">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-          </div>
-          <div className="terminal-tab-action">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </div>
-        </div>
-      </div>
       <div className="terminal-content" ref={xtermRef}></div>
     </div>
   );

@@ -137,6 +137,7 @@ export default function App() {
   const [openFolders, setOpenFolders] = useState({});
   const [folderMenu, setFolderMenu] = useState({ path: null, anchor: null });
   const [fileMenu, setFileMenu] = useState({ path: null, anchor: null });
+  
   const [recentFiles, setRecentFiles] = useState([]);
   const [showPreferences, setShowPreferences] = useState(false);
   const [notification, setNotification] = useState('');
@@ -295,6 +296,70 @@ export default function App() {
     }
   };
 
+  const handleOpenFolderInTerminal = (folderPath) => {
+    console.log('Opening folder in terminal:', folderPath);
+    
+    // Open terminal if not already open
+    if (!showTerminal) {
+      setShowTerminal(true);
+    }
+    
+    // Close the context menu immediately
+    setFolderMenu({ path: null, anchor: null });
+    
+    // Function to execute command once terminal is ready
+    const executeCommand = () => {
+      // Ensure we have terminals
+      setTerminals(currentTerminals => {
+        console.log('Current terminals:', currentTerminals);
+        
+        let targetTerminalId;
+        
+        // If no terminals exist, create one
+        if (currentTerminals.length === 0) {
+          const newId = 1;
+          targetTerminalId = newId;
+          setActiveTerminal(newId);
+          console.log('Creating new terminal with ID:', newId);
+          
+          // Wait for terminal to be ready then send command
+          setTimeout(() => {
+            const term = terminalRefs.current.get(newId);
+            console.log('New terminal reference found:', !!term);
+            if (term && term.writeToTerminal) {
+              const cleanPath = folderPath.replace(/\/$/, '');
+              const command = `cd "${cleanPath}"`;
+              console.log('Executing command:', command);
+              term.writeToTerminal(command + '\r\n');
+            }
+          }, 1500);
+          
+          return [{ id: newId, title: 'powershell' }];
+        } else {
+          // Use existing terminal
+          targetTerminalId = activeTerminal || currentTerminals[0].id;
+          console.log('Using existing terminal ID:', targetTerminalId);
+          
+          setTimeout(() => {
+            const term = terminalRefs.current.get(targetTerminalId);
+            console.log('Existing terminal reference found:', !!term);
+            if (term && term.writeToTerminal) {
+              const cleanPath = folderPath.replace(/\/$/, '');
+              const command = `cd "${cleanPath}"`;
+              console.log('Executing command:', command);
+              term.writeToTerminal(command + '\r\n');
+            }
+          }, 500);
+          
+          return currentTerminals;
+        }
+      });
+    };
+    
+    // Execute the command after a brief delay
+    setTimeout(executeCommand, 100);
+  };
+
   const closeTab = (name, e) => {
     e.stopPropagation();
     if (currentFile === name && code !== undefined) {
@@ -358,6 +423,8 @@ export default function App() {
                     onClick={() => setOpenFolders(f => ({ ...f, [fullPath]: !f[fullPath] }))}
                     onContextMenu={e => {
                       e.preventDefault();
+                      console.log('Right-click on folder:', fullPath);
+                      console.log('Mouse position:', e.clientX, e.clientY);
                       setFolderMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
                       setFileMenu({ path: null, anchor: null });
                     }}
@@ -385,6 +452,7 @@ export default function App() {
                       padding: '4px 0',
                     }}
                       onClick={e => e.stopPropagation()}
+                      data-context-menu="true"
                     >
                       <div
                         style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333' }}
@@ -400,6 +468,18 @@ export default function App() {
                           setFolderMenu({ path: null, anchor: null });
                         }}
                       >New Folder</div>
+                      <div
+                        style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333', display: 'flex', alignItems: 'center' }}
+                        onClick={() => {
+                          handleOpenFolderInTerminal(fullPath);
+                        }}
+                      >
+                        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ marginRight: '8px' }}>
+                          <path d="M4 17h16M8 9l3 3-3 3"/>
+                          <rect x="3" y="5" width="18" height="14" rx="2"/>
+                        </svg>
+                        Open with integrated terminal
+                      </div>
                       <div
                         style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
                         onClick={() => {
@@ -448,6 +528,7 @@ export default function App() {
                       padding: '4px 0',
                     }}
                       onClick={e => e.stopPropagation()}
+                      data-context-menu="true"
                     >
                       <div
                         style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
@@ -751,6 +832,37 @@ export default function App() {
     }
   }, [showTerminal]);
 
+  // Click-away functionality for context menus
+  useEffect(() => {
+    const handleClickAway = (e) => {
+      // Don't handle contextmenu events that are setting up new menus
+      if (e.type === 'contextmenu') {
+        return;
+      }
+      
+      // Check if click is outside of any context menu
+      const contextMenus = document.querySelectorAll('[data-context-menu]');
+      let isClickingOnContextMenu = false;
+      
+      contextMenus.forEach(menu => {
+        if (menu.contains(e.target)) {
+          isClickingOnContextMenu = true;
+        }
+      });
+      
+      if (!isClickingOnContextMenu) {
+        setFolderMenu({ path: null, anchor: null });
+        setFileMenu({ path: null, anchor: null });
+      }
+    };
+
+    document.addEventListener('click', handleClickAway);
+    
+    return () => {
+      document.removeEventListener('click', handleClickAway);
+    };
+  }, []);
+
   const handleAddNewTerminal = () => {
     setIsSplitView(false); // Always add a new terminal in single view
     setShowTerminal(true);
@@ -786,12 +898,18 @@ export default function App() {
   };
 
   const handleSplitTerminal = () => {
-    if (terminals.length < 2) {
-        // If there's only one terminal, add another one before splitting
-        const newId = terminals.length > 0 ? Math.max(...terminals.map(t => t.id)) + 1 : 1;
-        setTerminals(prev => [...prev, { id: newId, title: 'powershell' }]);
+    if (isSplitView) {
+        // If already split, unsplit
+        setIsSplitView(false);
+    } else {
+        // If not split, enable split view
+        if (terminals.length < 2) {
+            // If there's only one terminal, add another one before splitting
+            const newId = terminals.length > 0 ? Math.max(...terminals.map(t => t.id)) + 1 : 1;
+            setTerminals(prev => [...prev, { id: newId, title: 'powershell' }]);
+        }
+        setIsSplitView(true);
     }
-    setIsSplitView(true);
   };
 
   if (!showMainApp) {
@@ -937,6 +1055,8 @@ export default function App() {
                 position: 'relative',
                 display: 'flex',
                 flexDirection: 'column',
+                isolation: 'isolate',
+                contain: 'layout style paint',
               }}
             >
               <div
@@ -955,81 +1075,363 @@ export default function App() {
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                background: '#23272e',
-                borderBottom: '1px solid #333',
-                height: 36,
+                background: '#2d2d30',
+                borderBottom: '1px solid #3e3e42',
+                height: 35,
                 zIndex: 3,
                 position: 'relative',
                 marginTop: 6,
-                padding: '0 8px'
+                padding: '0 12px',
+                fontSize: '13px'
               }}>
-                <button
-                  onClick={() => setActiveBottomTab('terminal')}
-                  className={`terminal-tab ${activeBottomTab === 'terminal' ? 'active' : ''}`}
-                >Terminal</button>
-                <button
-                  onClick={() => setActiveBottomTab('output')}
-                  className={`terminal-tab ${activeBottomTab === 'output' ? 'active' : ''}`}
-                >Output</button>
-                <div style={{flex: 1}} />
-                <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
-                    <button onClick={handleAddNewTerminal} className="terminal-action-btn" title="New Terminal">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-                    </button>
-                    <button onClick={handleSplitTerminal} className="terminal-action-btn" title="Split Terminal">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h18v18H3V3zm8 2v14h8V5h-8z"/></svg>
-                    </button>
-                    <button onClick={() => handleDeleteTerminal(activeTerminal)} className="terminal-action-btn" title="Delete Terminal">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                    </button>
+                {/* Terminal Tabs */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flex: 1 }}>
+                  {terminals.map((term, index) => (
+                    <div
+                      key={term.id}
+                      onClick={() => {
+                        handleSetActiveTerminal(term.id);
+                        setActiveBottomTab('terminal');
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 12px 4px 8px',
+                        background: (term.id === activeTerminal && activeBottomTab === 'terminal') ? '#1e1e1e' : 'transparent',
+                        border: (term.id === activeTerminal && activeBottomTab === 'terminal') ? '1px solid #3e3e42' : '1px solid transparent',
+                        borderBottom: 'none',
+                        borderRadius: '4px 4px 0 0',
+                        cursor: 'pointer',
+                        color: (term.id === activeTerminal && activeBottomTab === 'terminal') ? '#cccccc' : '#969696',
+                        fontSize: '13px',
+                        transition: 'all 0.2s ease',
+                        position: 'relative',
+                        minWidth: '120px',
+                        maxWidth: '200px'
+                      }}
+                    >
+                      {/* PowerShell Icon */}
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style={{ color: '#0078d4', flexShrink: 0 }}>
+                        <path d="M2 3h12v10H2V3zm1 1v8h10V4H3zm1 1h1v1H4V5zm2 0h1v1H6V5zm2 0h1v1H8V5zm-4 2h6v1H4V7zm0 2h4v1H4V9z"/>
+                      </svg>
+                      
+                      {/* Terminal Label */}
+                      <span style={{ 
+                        whiteSpace: 'nowrap', 
+                        overflow: 'hidden', 
+                        textOverflow: 'ellipsis',
+                        flex: 1
+                      }}>
+                        {index + 1}: powershell
+                      </span>
+                      
+                      {/* Close button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteTerminal(term.id);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#969696',
+                          cursor: 'pointer',
+                          padding: '2px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: '3px',
+                          width: '16px',
+                          height: '16px',
+                          fontSize: '12px',
+                          opacity: 0.6
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.background = '#3e3e42';
+                          e.target.style.opacity = '1';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.background = 'none';
+                          e.target.style.opacity = '0.6';
+                        }}
+                        title={`Close Terminal ${index + 1}`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  
+                  {/* Other tab buttons */}
+                  <button
+                    onClick={() => setActiveBottomTab('output')}
+                    style={{
+                      background: activeBottomTab === 'output' ? '#1e1e1e' : 'transparent',
+                      border: activeBottomTab === 'output' ? '1px solid #3e3e42' : '1px solid transparent',
+                      borderBottom: 'none',
+                      borderRadius: '4px 4px 0 0',
+                      color: activeBottomTab === 'output' ? '#cccccc' : '#969696',
+                      padding: '4px 12px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      marginLeft: '4px'
+                    }}
+                  >
+                    Output
+                  </button>
                 </div>
+                
+                {/* Terminal Action Buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }}>
+                  <button
+                    onClick={handleAddNewTerminal}
+                    title="New Terminal"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#cccccc',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      borderRadius: '3px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      fontSize: '16px'
+                    }}
+                    onMouseEnter={(e) => e.target.style.background = '#3e3e42'}
+                    onMouseLeave={(e) => e.target.style.background = 'none'}
+                  >
+                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                  </button>
+                  
+                  <button
+                    onClick={handleSplitTerminal}
+                    title={isSplitView ? "Unsplit Terminal" : "Split Terminal"}
+                    style={{
+                      background: isSplitView ? '#3e3e42' : 'none',
+                      border: 'none',
+                      color: '#cccccc',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      borderRadius: '3px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      fontSize: '16px'
+                    }}
+                    onMouseEnter={(e) => !isSplitView && (e.target.style.background = '#3e3e42')}
+                    onMouseLeave={(e) => !isSplitView && (e.target.style.background = 'none')}
+                  >
+                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                      <line x1="9" y1="3" x2="9" y2="21"></line>
+                    </svg>
+                  </button>
+                  
+                  <button
+                    onClick={() => setShowTerminal(false)}
+                    title="Hide Terminal"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#cccccc',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      borderRadius: '3px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      fontSize: '16px'
+                    }}
+                    onMouseEnter={(e) => e.target.style.background = '#3e3e42'}
+                    onMouseLeave={(e) => e.target.style.background = 'none'}
+                  >
+                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  </button>
+                </div>
+                
               </div>
               <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
                 {activeBottomTab === 'terminal' ? (
-                  <>
-                    <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
-                        {isSplitView ? (
-                            splitTerminals.map(term => (
-                                <div key={term.id} style={{width: '50%', height: '100%', borderRight: '1px solid #444'}}>
-                                    <TerminalPanel 
-                                        ref={el => terminalRefs.current.set(term.id, el)}
-                                        workspace={workspace}
-                                        onProjectCreated={() => {
-                                            axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
-                                            setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
-                                            });
-                                        }} 
-                                    />
-                                </div>
-                            ))
-                        ) : (
-                            terminals.map(term => (
-                                <div key={term.id} style={{width: '100%', height: '100%', display: term.id === activeTerminal ? 'block' : 'none'}}>
-                                    <TerminalPanel 
-                                        ref={el => terminalRefs.current.set(term.id, el)}
-                                        workspace={workspace}
-                                        onProjectCreated={() => {
-                                            axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
-                                            setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
-                                            });
-                                        }} 
-                                    />
-                                </div>
-                            ))
-                        )}
-                    </div>
-                    <div className="terminal-sidebar">
-                        {terminals.map((term, index) => (
-                            <div 
-                                key={term.id} 
-                                className={`terminal-list-item ${term.id === activeTerminal ? 'active' : ''}`}
-                                onClick={() => handleSetActiveTerminal(term.id)}
-                            >
-                                {`${index + 1}: ${term.title}`}
-                            </div>
-                        ))}
-                    </div>
-                  </>
+                  <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
+                    {isSplitView && splitTerminals.length >= 2 ? (
+                      // Split view with two terminals side by side
+                      <>
+                        <div style={{ 
+                          flex: '1 1 50%', 
+                          display: 'flex', 
+                          flexDirection: 'column',
+                          minWidth: '200px',
+                          background: '#181a1b'
+                        }}>
+                          <TerminalPanel 
+                            ref={el => terminalRefs.current.set(splitTerminals[0].id, el)}
+                            workspace={workspace}
+                            onProjectCreated={() => {
+                              axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
+                                setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
+                              });
+                            }}
+                            onAddNewTerminal={handleAddNewTerminal}
+                            onDeleteTerminal={() => handleDeleteTerminal(splitTerminals[0].id)}
+                          />
+                        </div>
+                        
+                        {/* Vertical resize handle for split terminals */}
+                        <div 
+                          style={{
+                            width: 4,
+                            cursor: 'ew-resize',
+                            background: '#3e3e42',
+                            borderLeft: '1px solid #555',
+                            borderRight: '1px solid #555',
+                            userSelect: 'none',
+                            flexShrink: 0
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            
+                            const startX = e.clientX;
+                            const splitContainer = e.target.parentElement;
+                            const leftPanel = splitContainer.children[0];
+                            const rightPanel = splitContainer.children[2];
+                            
+                            // Get initial dimensions
+                            const containerRect = splitContainer.getBoundingClientRect();
+                            const leftRect = leftPanel.getBoundingClientRect();
+                            const rightRect = rightPanel.getBoundingClientRect();
+                            
+                            const totalWidth = containerRect.width - 4; // Account for splitter width
+                            const initialLeftWidth = leftRect.width;
+                            const initialRightWidth = rightRect.width;
+                            
+                            // Add visual feedback
+                            e.target.style.background = '#4fc3f7';
+                            document.body.style.cursor = 'ew-resize';
+                            
+                            const handleMouseMove = (moveEvent) => {
+                              const deltaX = moveEvent.clientX - startX;
+                              
+                              // Calculate new widths
+                              let newLeftWidth = initialLeftWidth + deltaX;
+                              let newRightWidth = initialRightWidth - deltaX;
+                              
+                              // Enforce minimum widths (200px each)
+                              const minWidth = 200;
+                              if (newLeftWidth < minWidth) {
+                                newLeftWidth = minWidth;
+                                newRightWidth = totalWidth - newLeftWidth;
+                              } else if (newRightWidth < minWidth) {
+                                newRightWidth = minWidth;
+                                newLeftWidth = totalWidth - newRightWidth;
+                              }
+                              
+                              // Apply styles using flex-basis for VS Code-like behavior
+                              leftPanel.style.flexBasis = `${newLeftWidth}px`;
+                              leftPanel.style.flexGrow = '0';
+                              leftPanel.style.flexShrink = '0';
+                              leftPanel.style.minWidth = `${minWidth}px`;
+                              leftPanel.style.maxWidth = 'none';
+                              leftPanel.style.width = 'auto';
+                              
+                              rightPanel.style.flexBasis = `${newRightWidth}px`;
+                              rightPanel.style.flexGrow = '0';
+                              rightPanel.style.flexShrink = '0';
+                              rightPanel.style.minWidth = `${minWidth}px`;
+                              rightPanel.style.maxWidth = 'none';
+                              rightPanel.style.width = 'auto';
+                              
+                              // Throttled terminal resize
+                              clearTimeout(window.resizeTimeout);
+                              window.resizeTimeout = setTimeout(() => {
+                                if (splitTerminals[0] && terminalRefs.current.get(splitTerminals[0].id)) {
+                                  const leftTerm = terminalRefs.current.get(splitTerminals[0].id);
+                                  if (leftTerm && leftTerm.fit) {
+                                    leftTerm.fit();
+                                  }
+                                }
+                                if (splitTerminals[1] && terminalRefs.current.get(splitTerminals[1].id)) {
+                                  const rightTerm = terminalRefs.current.get(splitTerminals[1].id);
+                                  if (rightTerm && rightTerm.fit) {
+                                    rightTerm.fit();
+                                  }
+                                }
+                              }, 16);
+                            };
+                            
+                            const handleMouseUp = () => {
+                              // Reset visual feedback
+                              e.target.style.background = '#3e3e42';
+                              document.body.style.cursor = 'default';
+                              
+                              document.removeEventListener('mousemove', handleMouseMove);
+                              document.removeEventListener('mouseup', handleMouseUp);
+                              
+                              // Final terminal resize
+                              setTimeout(() => {
+                                if (splitTerminals[0] && terminalRefs.current.get(splitTerminals[0].id)) {
+                                  const leftTerm = terminalRefs.current.get(splitTerminals[0].id);
+                                  if (leftTerm && leftTerm.fit) {
+                                    leftTerm.fit();
+                                  }
+                                }
+                                if (splitTerminals[1] && terminalRefs.current.get(splitTerminals[1].id)) {
+                                  const rightTerm = terminalRefs.current.get(splitTerminals[1].id);
+                                  if (rightTerm && rightTerm.fit) {
+                                    rightTerm.fit();
+                                  }
+                                }
+                              }, 100);
+                            };
+                            
+                            document.addEventListener('mousemove', handleMouseMove);
+                            document.addEventListener('mouseup', handleMouseUp);
+                          }}
+                        />
+                        
+                        <div style={{ 
+                          flex: '1 1 50%', 
+                          display: 'flex', 
+                          flexDirection: 'column',
+                          minWidth: '200px',
+                          background: '#181a1b'
+                        }}>
+                          <TerminalPanel 
+                            ref={el => terminalRefs.current.set(splitTerminals[1].id, el)}
+                            workspace={workspace}
+                            onProjectCreated={() => {
+                              axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
+                                setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
+                              });
+                            }}
+                            onAddNewTerminal={handleAddNewTerminal}
+                            onDeleteTerminal={() => handleDeleteTerminal(splitTerminals[1].id)}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      // Single terminal view
+                      terminals.map(term =>
+                        <div key={term.id} style={{width: '100%', height: '100%', display: term.id === activeTerminal ? 'block' : 'none'}}>
+                          <TerminalPanel 
+                            ref={el => terminalRefs.current.set(term.id, el)}
+                            workspace={workspace}
+                            onProjectCreated={() => {
+                              axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
+                                setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
+                              });
+                            }}
+                            onAddNewTerminal={handleAddNewTerminal}
+                            onDeleteTerminal={() => handleDeleteTerminal(term.id)}
+                          />
+                        </div>
+                      )
+                    )}
+                  </div>
                 ) : (
                   <div className="output-panel">
                     <strong>Output:</strong>

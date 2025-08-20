@@ -9,10 +9,11 @@ const DropdownMenu = ({ section, position, onMenuAction, autoSave }) => {
   if (!items) return null;
 
   const style = {
-    position: 'absolute',
+    position: 'fixed',
     left: position && position.left ? position.left : 0,
     top: position && position.top ? position.top : '100%',
-    zIndex: 999,
+    zIndex: 100000,
+    isolation: 'isolate',
   };
 
   const handleItemClick = (item) => {
