@@ -52,13 +52,13 @@ import AIAssistant from './components/AIAssistant';
       <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/><path d="M7 7l10 10"/></svg>
     )
   },
-  {
-    key: 'settings',
-    title: 'Settings',
-    svg: (
-      <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82-.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09c0 .66.38 1.26 1 1.51a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 8c.36.36.57.86.6 1.39V9a2 2 0 1 1 0 4h-.09c-.03.53-.24 1.03-.6 1.39z"/></svg>
-    )
-  }
+     {
+     key: 'settings',
+     title: 'Settings',
+     svg: (
+       <img src="/gear.png" alt="Settings" width="24" height="24" style={{ filter: 'invert(1)' }} />
+     )
+   }
 ];
 
 const SETTINGS_MENU = [
@@ -162,40 +162,90 @@ export default function App() {
   };
 
   useEffect(() => {
-    axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
-      setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
-    });
+    try {
+      axios.get(`/api/files?workspace=${workspace}`)
+        .then(fileRes => {
+          if (fileRes.data && Array.isArray(fileRes.data)) {
+            setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
+          } else {
+            console.warn('Invalid files response:', fileRes.data);
+            setFiles([]);
+          }
+        })
+        .catch(error => {
+          console.error('Failed to fetch files:', error);
+          setFiles([]);
+          showNotification('Failed to load files');
+        });
+    } catch (error) {
+      console.error('Error in files effect:', error);
+      setFiles([]);
+    }
   }, [workspace]);
 
-  useEffect(() => {
-    if (files.length > 0 && !currentFile) {
-      openFile(files[0]);
-    }
-  }, [files]);
+  // Removed auto-opening of first file - user must manually open files
 
   const saveFile = () => {
-    if (!currentFile) return;
-    axios.post(`/api/file?workspace=${workspace}`, { name: currentFile, content: code });
+    if (!currentFile || !code) return;
+    try {
+      axios.post(`/api/file?workspace=${workspace}`, { name: currentFile, content: code })
+        .catch(error => {
+          console.error('Save failed:', error);
+          showNotification('Failed to save file');
+        });
+    } catch (error) {
+      console.error('Save error:', error);
+      showNotification('Failed to save file');
+    }
   };
 
   useEffect(() => {
-    if (!currentFile) return;
+    if (!currentFile || !autoSave) return;
     const timeout = setTimeout(() => {
-      saveFile();
+      try {
+        saveFile();
+      } catch (error) {
+        console.error('Auto-save failed:', error);
+        // Don't crash the app, just log the error
+      }
     }, 800);
     return () => clearTimeout(timeout);
-  }, [code, currentFile]);
+  }, [code, currentFile, autoSave]);
 
   const openFile = name => {
-    if (currentFile && code !== undefined && currentFile !== name) {
-      saveFile();
+    if (!name || typeof name !== 'string') {
+      console.error('Invalid file name:', name);
+      return;
     }
-    setCurrentFile(name);
-    if (!openTabs.includes(name)) setOpenTabs([...openTabs, name]);
-    axios.get(`/api/file?workspace=${workspace}&name=${encodeURIComponent(name)}`)
-      .then(fileRes => setCode(fileRes.data.content));
-    setRunOutput('');
-    setRecentFiles(prev => [name, ...prev.filter(f => f !== name)].slice(0, 10));
+    
+    try {
+      if (currentFile && code !== undefined && currentFile !== name) {
+        saveFile();
+      }
+      setCurrentFile(name);
+      if (!openTabs.includes(name)) setOpenTabs([...openTabs, name]);
+      
+      axios.get(`/api/file?workspace=${workspace}&name=${encodeURIComponent(name)}`)
+        .then(fileRes => {
+          if (fileRes.data && fileRes.data.content !== undefined) {
+            setCode(fileRes.data.content);
+          } else {
+            setCode('');
+            console.warn('File content is undefined:', fileRes.data);
+          }
+        })
+        .catch(error => {
+          console.error('Failed to open file:', error);
+          setCode('');
+          showNotification('Failed to open file');
+        });
+      
+      setRunOutput('');
+      setRecentFiles(prev => [name, ...prev.filter(f => f !== name)].slice(0, 10));
+    } catch (error) {
+      console.error('Error opening file:', error);
+      showNotification('Error opening file');
+    }
   };
 
   const handleSearch = async (e) => {
@@ -380,173 +430,254 @@ export default function App() {
   };
 
   const renderFileTree = (files) => {
-    const folderNames = new Set(
-      files.filter(f => typeof f === 'string' && f.endsWith('/')).map(f => f.slice(0, -1))
-    );
-    const filteredFiles = files.filter(f => {
-      if (typeof f !== 'string') return false;
-      if (!f.endsWith('/') && folderNames.has(f)) return false; 
-      return true;
-    });
-    const tree = {};
-    filteredFiles.forEach(f => {
-      if (typeof f !== 'string') return;
-      const parts = f.split('/').filter(Boolean);
-      let node = tree;
-      parts.forEach((part, i) => {
-        if (typeof part !== 'string') return;
-        const isLast = i === parts.length - 1;
-        const isFolder = f.endsWith('/') && isLast;
-        if (!Object.prototype.hasOwnProperty.call(node, part) || (isFolder && node[part] === null)) {
-          node[part] = isFolder ? {} : null;
-        }
-        if (!isLast) {
-          if (node[part] === null) node[part] = {};
-          node = node[part];
-        }
-      });
-    });
-    const renderNode = (node, path = '', isRoot = false) => {
-      let entries = Object.entries(node);
+    if (!files || !Array.isArray(files)) {
       return (
-        <ul className="file-list" style={{ marginLeft: path ? 16 : 0 }}>
-          {entries.map(([name, child]) => {
-            if (typeof name !== 'string') return null;
-            const fullPath = path + name;
-            const isFolder = child && typeof child === 'object' && child !== null && !Array.isArray(child);
-            if (isFolder) {
-              const isOpen = !!openFolders[fullPath];
-              return (
-                <li key={fullPath} style={{ fontWeight: 600, color: '#4fc3f7', marginBottom: 2, position: 'relative' }}>
-                  <div
-                    style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
-                    onClick={() => setOpenFolders(f => ({ ...f, [fullPath]: !f[fullPath] }))}
+        <div style={{ padding: '16px', color: '#888', textAlign: 'center' }}>
+          No files available
+        </div>
+      );
+    }
+    
+    try {
+      const folderNames = new Set(
+        files.filter(f => typeof f === 'string' && f.endsWith('/')).map(f => f.slice(0, -1))
+      );
+      const filteredFiles = files.filter(f => {
+        if (typeof f !== 'string') return false;
+        if (!f.endsWith('/') && folderNames.has(f)) return false; 
+        return true;
+      });
+      const tree = {};
+      filteredFiles.forEach(f => {
+        if (typeof f !== 'string') return;
+        const parts = f.split('/').filter(Boolean);
+        let node = tree;
+        parts.forEach((part, i) => {
+          if (typeof part !== 'string') return;
+          const isLast = i === parts.length - 1;
+          const isFolder = f.endsWith('/') && isLast;
+          if (!Object.prototype.hasOwnProperty.call(node, part) || (isFolder && node[part] === null)) {
+            node[part] = isFolder ? {} : null;
+          }
+          if (!isLast) {
+            if (node[part] === null) node[part] = {};
+            node = node[part];
+          }
+        });
+      });
+      
+      const renderNode = (node, path = '', isRoot = false) => {
+        if (!node || typeof node !== 'object') return null;
+        
+        let entries = Object.entries(node);
+        if (entries.length === 0) {
+          return (
+            <div style={{ padding: '8px 16px', color: '#888', fontSize: '12px', fontStyle: 'italic' }}>
+              Empty folder
+            </div>
+          );
+        }
+        
+        return (
+          <ul className="file-list" style={{ marginLeft: path ? 16 : 0 }}>
+            {entries.map(([name, child]) => {
+              if (typeof name !== 'string') return null;
+              const fullPath = path + name;
+              const isFolder = child && typeof child === 'object' && child !== null && !Array.isArray(child);
+              
+              if (isFolder) {
+                const isOpen = !!openFolders[fullPath];
+                return (
+                  <li key={fullPath} style={{ fontWeight: 600, color: '#4fc3f7', marginBottom: 2, position: 'relative' }}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+                      onClick={() => setOpenFolders(f => ({ ...f, [fullPath]: !f[fullPath] }))}
+                      onContextMenu={e => {
+                        e.preventDefault();
+                        try {
+                          setFolderMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
+                          setFileMenu({ path: null, anchor: null });
+                        } catch (error) {
+                          console.error('Error setting folder menu:', error);
+                        }
+                      }}
+                    >
+                      <img
+                        src={isOpen ? '/dowwnarrow.png' : '/righttarrow.png'}
+                        alt={isOpen ? 'Down Arrow' : 'Right Arrow'}
+                        style={{ width: 16, height: 16, marginRight: 4, userSelect: 'none', display: 'inline-block', verticalAlign: 'middle' }}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          console.warn('Failed to load arrow image');
+                        }}
+                      />
+                      <img 
+                        src={'/folder2.png'} 
+                        alt="Folder" 
+                        style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block' }}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          console.warn('Failed to load folder image');
+                        }}
+                      />
+                      {name}
+                    </div>
+                    {folderMenu.path === fullPath && folderMenu.anchor && (
+                      <div style={{
+                        position: 'fixed',
+                        left: folderMenu.anchor.x,
+                        top: folderMenu.anchor.y,
+                        background: '#23272e',
+                        color: '#fff',
+                        borderRadius: 6,
+                        boxShadow: '0 2px 12px #0008',
+                        minWidth: 120,
+                        zIndex: 1000,
+                        border: '1px solid #222',
+                        padding: '4px 0',
+                      }}
+                        onClick={e => e.stopPropagation()}
+                        data-context-menu="true"
+                      >
+                        <div
+                          style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333' }}
+                          onClick={() => {
+                            try {
+                              handleAddFile(fullPath + '/');
+                              setFolderMenu({ path: null, anchor: null });
+                            } catch (error) {
+                              console.error('Error adding file:', error);
+                              showNotification('Failed to add file');
+                            }
+                          }}
+                        >New File</div>
+                        <div
+                          style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333' }}
+                          onClick={() => {
+                            try {
+                              handleAddFolder(fullPath + '/');
+                              setFolderMenu({ path: null, anchor: null });
+                            } catch (error) {
+                              console.error('Error adding folder:', error);
+                              showNotification('Failed to add folder');
+                            }
+                          }}
+                        >New Folder</div>
+                        <div
+                          style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333', display: 'flex', alignItems: 'center' }}
+                          onClick={() => {
+                            try {
+                              handleOpenFolderInTerminal(fullPath);
+                            } catch (error) {
+                              console.error('Error opening folder in terminal:', error);
+                              showNotification('Failed to open folder in terminal');
+                            }
+                          }}
+                        >
+                          <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ marginRight: '8px' }}>
+                            <path d="M4 17h16M8 9l3 3-3 3"/>
+                            <rect x="3" y="5" width="18" height="14" rx="2"/>
+                          </svg>
+                          Open with integrated terminal
+                        </div>
+                        <div
+                          style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
+                          onClick={() => {
+                            try {
+                              handleDeleteFolder(fullPath + '/', { stopPropagation: () => {} });
+                              setFolderMenu({ path: null, anchor: null });
+                            } catch (error) {
+                              console.error('Error deleting folder:', error);
+                              showNotification('Failed to delete folder');
+                            }
+                          }}
+                        >Delete</div>
+                      </div>
+                    )}
+                    {isOpen && (
+                      <div style={{ marginLeft: 16 }}>
+                        {renderNode(child, fullPath + '/')}
+                      </div>
+                    )}
+                  </li>
+                );
+              } else {
+                return (
+                  <li
+                    key={fullPath}
+                    className={`file-item${fullPath === currentFile ? ' active' : ''}`}
+                    onClick={() => openFile(fullPath)}
                     onContextMenu={e => {
                       e.preventDefault();
-                      console.log('Right-click on folder:', fullPath);
-                      console.log('Mouse position:', e.clientX, e.clientY);
-                      setFolderMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
-                      setFileMenu({ path: null, anchor: null });
+                      try {
+                        setFileMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
+                        setFolderMenu({ path: null, anchor: null });
+                      } catch (error) {
+                        console.error('Error setting file menu:', error);
+                      }
                     }}
+                    style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
                   >
-                    <img
-                      src={isOpen ? '/dowwnarrow.png' : '/righttarrow.png'}
-                      alt={isOpen ? 'Down Arrow' : 'Right Arrow'}
-                      style={{ width: 16, height: 16, marginRight: 4, userSelect: 'none', display: 'inline-block', verticalAlign: 'middle' }}
-                    />
-                    <img src={'/folder2.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block' }} />
+                    <span style={{ marginRight: 4, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <img 
+                        src={getFileIcon(name)} 
+                        alt={getFileExtension(name) + ' file'} 
+                        style={{ width: 16, height: 16 }}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          console.warn('Failed to load file icon');
+                        }}
+                      />
+                    </span>
                     {name}
-                  </div>
-                  {folderMenu.path === fullPath && folderMenu.anchor && (
-                    <div style={{
-                      position: 'fixed',
-                      left: folderMenu.anchor.x,
-                      top: folderMenu.anchor.y,
-                      background: '#23272e',
-                      color: '#fff',
-                      borderRadius: 6,
-                      boxShadow: '0 2px 12px #0008',
-                      minWidth: 120,
-                      zIndex: 1000,
-                      border: '1px solid #222',
-                      padding: '4px 0',
-                    }}
-                      onClick={e => e.stopPropagation()}
-                      data-context-menu="true"
-                    >
-                      <div
-                        style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333' }}
-                        onClick={() => {
-                          handleAddFile(fullPath + '/');
-                          setFolderMenu({ path: null, anchor: null });
-                        }}
-                      >New File</div>
-                      <div
-                        style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333' }}
-                        onClick={() => {
-                          handleAddFolder(fullPath + '/');
-                          setFolderMenu({ path: null, anchor: null });
-                        }}
-                      >New Folder</div>
-                      <div
-                        style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333', display: 'flex', alignItems: 'center' }}
-                        onClick={() => {
-                          handleOpenFolderInTerminal(fullPath);
-                        }}
+                    {fileMenu.path === fullPath && fileMenu.anchor && (
+                      <div style={{
+                        position: 'fixed',
+                        left: fileMenu.anchor.x,
+                        top: fileMenu.anchor.y,
+                        background: '#23272e',
+                        color: '#fff',
+                        borderRadius: 6,
+                        boxShadow: '0 2px 12px #0008',
+                        minWidth: 120,
+                        zIndex: 1000,
+                        border: '1px solid #222',
+                        padding: '4px 0',
+                      }}
+                        onClick={e => e.stopPropagation()}
+                        data-context-menu="true"
                       >
-                        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ marginRight: '8px' }}>
-                          <path d="M4 17h16M8 9l3 3-3 3"/>
-                          <rect x="3" y="5" width="18" height="14" rx="2"/>
-                        </svg>
-                        Open with integrated terminal
+                        <div
+                          style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
+                          onClick={e => {
+                            try {
+                              handleDeleteFile(fullPath, e);
+                              setFileMenu({ path: null, anchor: null });
+                            } catch (error) {
+                              console.error('Error deleting file:', error);
+                              showNotification('Failed to delete file');
+                            }
+                          }}
+                        >Delete</div>
                       </div>
-                      <div
-                        style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
-                        onClick={() => {
-                          handleDeleteFolder(fullPath + '/', { stopPropagation: () => {} });
-                          setFolderMenu({ path: null, anchor: null });
-                        }}
-                      >Delete</div>
-                    </div>
-                  )}
-                  {isOpen && (
-                    <div style={{ marginLeft: 16 }}>
-                      {renderNode(child, fullPath + '/')}
-                    </div>
-                  )}
-                </li>
-              );
-            } else {
-              return (
-                <li
-                  key={fullPath}
-                  className={`file-item${fullPath === currentFile ? ' active' : ''}`}
-                  onClick={() => openFile(fullPath)}
-                  onContextMenu={e => {
-                    e.preventDefault();
-                    setFileMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
-                    setFolderMenu({ path: null, anchor: null });
-                  }}
-                  style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
-                >
-                  <span style={{ marginRight: 4, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <img src={getFileIcon(name)} alt={getFileExtension(name) + ' file'} style={{ width: 16, height: 16 }} />
-                  </span>
-                  {name}
-                  {fileMenu.path === fullPath && fileMenu.anchor && (
-                    <div style={{
-                      position: 'fixed',
-                      left: fileMenu.anchor.x,
-                      top: fileMenu.anchor.y,
-                      background: '#23272e',
-                      color: '#fff',
-                      borderRadius: 6,
-                      boxShadow: '0 2px 12px #0008',
-                      minWidth: 120,
-                      zIndex: 1000,
-                      border: '1px solid #222',
-                      padding: '4px 0',
-                    }}
-                      onClick={e => e.stopPropagation()}
-                      data-context-menu="true"
-                    >
-                      <div
-                        style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
-                        onClick={e => {
-                          handleDeleteFile(fullPath, e);
-                          setFileMenu({ path: null, anchor: null });
-                        }}
-                      >Delete</div>
-                    </div>
-                  )}
-                </li>
-              );
-            }
-          })}
-        </ul>
+                    )}
+                  </li>
+                );
+              }
+            })}
+          </ul>
+        );
+      };
+      
+      return renderNode(tree, '', true);
+    } catch (error) {
+      console.error('Error rendering file tree:', error);
+      return (
+        <div style={{ padding: '16px', color: '#e57373', textAlign: 'center' }}>
+          Error loading files
+        </div>
       );
-    };
-    return renderNode(tree, '', true);
+    }
   };
 
   const renderSidebarPanel = () => {
@@ -635,13 +766,76 @@ export default function App() {
     return false;
   };
 
-  const renderSettingsMenu = () => (
-    <div className="settings-menu">
-      <div className="menu-item" onClick={() => { setShowCommandPalette(true); setShowSettingsPanel(false); }}>Command Palette... <span style={{color:'#bdbdbd'}}>Ctrl+Shift+P</span></div>
-      <div className="menu-separator"></div>
-      <div className="menu-item" onClick={() => { setShowSettingsPanel(true); setShowCommandPalette(false); }}>Settings <span style={{color:'#bdbdbd'}}>Ctrl+,</span></div>
-    </div>
-  );
+  const renderSettingsMenu = () => {
+    if (!showSettings) return null;
+    
+    return (
+      <div className="settings-menu" style={{
+        position: 'absolute',
+        bottom: '80px',
+        right: '0',
+        background: '#23272e',
+        border: '1px solid #333',
+        borderRadius: '6px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        minWidth: '200px',
+        zIndex: 1000,
+        overflow: 'hidden'
+      }}>
+        <div 
+          className="menu-item" 
+          onClick={() => { 
+            setShowCommandPalette(true); 
+            setShowSettings(false); 
+          }}
+          style={{
+            padding: '8px 16px',
+            cursor: 'pointer',
+            color: '#fff',
+            borderBottom: '1px solid #333',
+            fontSize: '13px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+          onMouseEnter={(e) => e.target.style.background = '#3e3e42'}
+          onMouseLeave={(e) => e.target.style.background = 'transparent'}
+        >
+          Command Palette... 
+          <span style={{color:'#bdbdbd', fontSize: '11px'}}>Ctrl+Shift+P</span>
+        </div>
+        <div 
+          className="menu-separator" 
+          style={{
+            height: '1px',
+            background: '#333',
+            margin: '0'
+          }}
+        ></div>
+        <div 
+          className="menu-item" 
+          onClick={() => { 
+            setShowSettingsPanel(true); 
+            setShowSettings(false); 
+          }}
+          style={{
+            padding: '8px 16px',
+            cursor: 'pointer',
+            color: '#fff',
+            fontSize: '13px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+          onMouseEnter={(e) => e.target.style.background = '#3e3e42'}
+          onMouseLeave={(e) => e.target.style.background = 'transparent'}
+        >
+          Settings 
+          <span style={{color:'#bdbdbd', fontSize: '11px'}}>Ctrl+,</span>
+        </div>
+      </div>
+    );
+  };
 
   const handleGoLive = async () => {
     await saveFile();
@@ -743,6 +937,11 @@ export default function App() {
         setCommandIndex(0);
         e.preventDefault();
       }
+      // Settings shortcut (Ctrl+,)
+      if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+        setShowSettingsPanel(true);
+        e.preventDefault();
+      }
     };
     window.addEventListener('keydown', globalPaletteHandler);
     return () => window.removeEventListener('keydown', globalPaletteHandler);
@@ -832,7 +1031,7 @@ export default function App() {
     }
   }, [showTerminal]);
 
-  // Click-away functionality for context menus
+  // Click-away functionality for context menus and settings
   useEffect(() => {
     const handleClickAway = (e) => {
       // Don't handle contextmenu events that are setting up new menus
@@ -850,9 +1049,22 @@ export default function App() {
         }
       });
       
+      // Check if click is outside settings menu
+      const settingsMenu = document.querySelector('.settings-menu');
+      const isClickingOnSettings = settingsMenu && settingsMenu.contains(e.target);
+      
+      // Check if click is on settings icon
+      const settingsIcon = e.target.closest('.sidebar-icon');
+      const isClickingOnSettingsIcon = settingsIcon && settingsIcon.title === 'Settings';
+      
       if (!isClickingOnContextMenu) {
         setFolderMenu({ path: null, anchor: null });
         setFileMenu({ path: null, anchor: null });
+      }
+      
+      // Close settings menu if clicking outside (but not on the icon)
+      if (showSettings && !isClickingOnSettings && !isClickingOnSettingsIcon) {
+        setShowSettings(false);
       }
     };
 
@@ -861,7 +1073,7 @@ export default function App() {
     return () => {
       document.removeEventListener('click', handleClickAway);
     };
-  }, []);
+  }, [showSettings]);
 
   const handleAddNewTerminal = () => {
     setIsSplitView(false); // Always add a new terminal in single view
@@ -997,7 +1209,11 @@ export default function App() {
             </div>
             <img src="/icon.png" alt="User" style={{ width: 32, height: 32, borderRadius: 8, marginTop: 16, border: '1.5px solid #333', background: '#23272e' }} />
           </div>
-          {showSettings && renderSettingsMenu()}
+          {showSettings && (
+            <div style={{ position: 'relative' }}>
+              {renderSettingsMenu()}
+            </div>
+          )}
         </div>
         
         {renderSidebarPanel()}
@@ -1021,7 +1237,91 @@ export default function App() {
               ))}
             </div>
             <div style={{flex:1, display:'flex', flexDirection:'column', background:'#23272e'}}>
-             
+              {openTabs.length === 0 || files.length === 0 ? (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  color: '#4fc3f7',
+                  textAlign: 'center',
+                  padding: '40px'
+                }}>
+                  <h1 style={{
+                    fontSize: '48px',
+                    fontWeight: 'bold',
+                    margin: '0 0 20px 0',
+                    color: '#4fc3f7'
+                  }}>
+                    WELCOME TO CLICKK
+                  </h1>
+                  <p style={{
+                    fontSize: '18px',
+                    color: '#888',
+                    fontStyle: 'italic',
+                    margin: '0 0 10px 0'
+                  }}>
+                    "The best way to predict the future is to invent it." - Alan Kay
+                  </p>
+                  <p style={{
+                    fontSize: '16px',
+                    color: '#aaa',
+                    fontStyle: 'italic',
+                    margin: '0'
+                  }}>
+                    Your AI-powered coding companion
+                  </p>
+                  <div style={{
+                    marginTop: '40px',
+                    display: 'flex',
+                    gap: '20px'
+                  }}>
+                    {/* <button
+                      onClick={handleAddFile}
+                      style={{
+                        background: '#4fc3f7',
+                        color: '#181a1b',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '12px 24px',
+                        fontSize: '16px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => e.target.style.background = '#29b6f6'}
+                      onMouseLeave={(e) => e.target.style.background = '#4fc3f7'}
+                    >
+                      Create New File
+                    </button>
+                    <button
+                      onClick={handleAddFolder}
+                      style={{
+                        background: 'transparent',
+                        color: '#4fc3f7',
+                        border: '2px solid #4fc3f7',
+                        borderRadius: '8px',
+                        padding: '12px 24px',
+                        fontSize: '16px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.background = '#4fc3f7';
+                        e.target.style.color = '#181a1b';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.background = 'transparent';
+                        e.target.style.color = '#4fc3f7';
+                      }}
+                    >
+                      Create New Folder
+                    </button> */}
+                  </div>
+                </div>
+              ) : (
                 <MonacoEditor
                   height="100%"
                   language={getLanguage(currentFile)}
@@ -1041,7 +1341,7 @@ export default function App() {
                     background: '#23272e',
                   }}
                 />
-              
+              )}
             </div>
           </div>
           {showTerminal && (
@@ -1455,82 +1755,314 @@ export default function App() {
           </div>
         )}
       </div>
-      <div style={{
-        position: 'fixed',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        height: 36,
-        background: '#23272e',
-        color: '#fff',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        padding: '0 24px',
-        borderTop: '1px solid #333',
-        zIndex: 1001
-      }}>
-        <span style={{marginRight: 16, color: liveStatus.running ? '#4fc3f7' : '#aaa'}}>
-          {liveStatus.running ? `Port : 5500 (Live)` : 'Go Live stopped'}
-        </span>
-        <button
-          onClick={handleGoLive}
-          disabled={liveStatus.running}
-          className="status-bar-btn go-live"
-        >
-          Go Live
-        </button>
-        <button
-          onClick={handleStopLive}
-          disabled={!liveStatus.running}
-          className="status-bar-btn stop-live"
-        >
-          Stop Live
-        </button>
-      </div>
+             <div style={{
+         position: 'fixed',
+         left: 0,
+         right: isAIAssistantVisible ? '400px' : 0,
+         bottom: 3,
+         height: 36,
+         background: '#23272e',
+         color: '#fff',
+         display: 'flex',
+         alignItems: 'center',
+         justifyContent: 'flex-end',
+         padding: '0 24px',
+         borderTop: '1px solid #333',
+         zIndex: 1001,
+         transition: 'right 0.3s ease'
+       }}>
+         <span style={{marginRight: 16, color: liveStatus.running ? '#4fc3f7' : '#aaa'}}>
+           {liveStatus.running ? `Port : 5500 (Live)` : 'Go Live stopped'}
+         </span>
+         <button
+           onClick={handleGoLive}
+           disabled={liveStatus.running}
+           className="status-bar-btn go-live"
+         >
+           Go Live
+         </button>
+         <button
+           onClick={handleStopLive}
+           disabled={!liveStatus.running}
+           className="status-bar-btn stop-live"
+         >
+           Stop Live
+         </button>
+       </div>
       {showSettingsPanel && (
-        <div className="modal-overlay" onClick={() => setShowSettingsPanel(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2 style={{marginTop:0, marginBottom:16}}>Settings</h2>
-            <div style={{marginBottom:16}}>
-              <label style={{fontWeight:600}}>Theme:</label>
-              <select style={{marginLeft:12, padding:4, borderRadius:4, background:'#181a1b', color:'#fff', border:'1px solid #333'}} disabled>
+        <div 
+          className="modal-overlay" 
+          onClick={() => setShowSettingsPanel(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}
+        >
+          <div 
+            className="modal-content" 
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#23272e',
+              border: '1px solid #333',
+              borderRadius: '8px',
+              padding: '24px',
+              minWidth: '400px',
+              maxWidth: '600px',
+              maxHeight: '80vh',
+              overflow: 'auto',
+              position: 'relative',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
+            }}
+          >
+            <h2 style={{
+              marginTop: 0, 
+              marginBottom: 24,
+              color: '#fff',
+              fontSize: '24px',
+              fontWeight: '600'
+            }}>
+              Settings
+            </h2>
+            
+            <div style={{marginBottom: 20}}>
+              <label style={{
+                fontWeight: 600,
+                color: '#fff',
+                display: 'block',
+                marginBottom: 8,
+                fontSize: '14px'
+              }}>
+                Theme:
+              </label>
+              <select 
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 6,
+                  background: '#181a1b',
+                  color: '#fff',
+                  border: '1px solid #333',
+                  fontSize: '14px',
+                  minWidth: '200px'
+                }} 
+                disabled
+              >
                 <option>Dark (default)</option>
               </select>
-              <span style={{marginLeft:8, color:'#888', fontSize:'0.95em'}}>(coming soon)</span>
+              <span style={{
+                marginLeft: 12, 
+                color: '#888', 
+                fontSize: '13px',
+                fontStyle: 'italic'
+              }}>
+                (coming soon)
+              </span>
             </div>
-            <button onClick={() => setShowSettingsPanel(false)} className="modal-close-btn">×</button>
+            
+            <div style={{marginBottom: 20}}>
+              <label style={{
+                fontWeight: 600,
+                color: '#fff',
+                display: 'block',
+                marginBottom: 8,
+                fontSize: '14px'
+              }}>
+                Auto Save:
+              </label>
+              <input 
+                type="checkbox"
+                checked={autoSave}
+                onChange={(e) => setAutoSave(e.target.checked)}
+                style={{
+                  marginLeft: 8,
+                  transform: 'scale(1.2)'
+                }}
+              />
+              <span style={{
+                marginLeft: 8, 
+                color: '#ccc', 
+                fontSize: '13px'
+              }}>
+                Automatically save files when typing
+              </span>
+            </div>
+            
+            <div style={{marginBottom: 20}}>
+              <label style={{
+                fontWeight: 600,
+                color: '#fff',
+                display: 'block',
+                marginBottom: 8,
+                fontSize: '14px'
+              }}>
+                AI Assistant:
+              </label>
+              <input 
+                type="checkbox"
+                checked={isAIAssistantVisible}
+                onChange={(e) => setIsAIAssistantVisible(e.target.checked)}
+                style={{
+                  marginLeft: 8,
+                  transform: 'scale(1.2)'
+                }}
+              />
+              <span style={{
+                marginLeft: 8, 
+                color: '#ccc', 
+                fontSize: '13px'
+              }}>
+                Show AI Assistant panel
+              </span>
+            </div>
+            
+            <button 
+              onClick={() => setShowSettingsPanel(false)} 
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                background: 'none',
+                border: 'none',
+                color: '#888',
+                fontSize: '24px',
+                cursor: 'pointer',
+                padding: '0',
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '4px'
+              }}
+              onMouseEnter={(e) => e.target.style.background = '#3e3e42'}
+              onMouseLeave={(e) => e.target.style.background = 'transparent'}
+            >
+              ×
+            </button>
           </div>
         </div>
       )}
       {showCommandPalette && (
-        <div className="modal-overlay" onClick={() => setShowCommandPalette(false)}>
-          <div className="command-palette" onClick={e => e.stopPropagation()}>
+        <div 
+          className="modal-overlay" 
+          onClick={() => setShowCommandPalette(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}
+        >
+          <div 
+            className="command-palette" 
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#23272e',
+              border: '1px solid #333',
+              borderRadius: '8px',
+              padding: '0',
+              minWidth: '500px',
+              maxWidth: '600px',
+              maxHeight: '70vh',
+              overflow: 'hidden',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
             <input
               ref={commandInputRef}
               type="text"
               placeholder="Type a command..."
               value={commandSearch}
               onChange={e => { setCommandSearch(e.target.value); setCommandIndex(0); }}
+              style={{
+                padding: '16px 20px',
+                background: 'transparent',
+                border: 'none',
+                color: '#fff',
+                fontSize: '16px',
+                outline: 'none',
+                borderBottom: '1px solid #333'
+              }}
             />
-            <div style={{maxHeight: 320, overflowY: 'auto'}}>
-              {filteredCommands.map((cmd, i) => (
-                <div
-                  key={cmd.id}
-                  className={`command-item ${i === commandIndex ? 'selected' : ''}`}
-                  onMouseEnter={() => setCommandIndex(i)}
-                  onClick={() => {
-                    cmd.action();
-                    setShowCommandPalette(false);
-                    setCommandSearch('');
-                    setCommandIndex(0);
-                  }}
-                >
-                  {cmd.label}
+            <div style={{
+              maxHeight: 320, 
+              overflowY: 'auto',
+              padding: '8px 0'
+            }}>
+              {filteredCommands.length > 0 ? (
+                filteredCommands.map((cmd, i) => (
+                  <div
+                    key={cmd.id}
+                    className={`command-item ${i === commandIndex ? 'selected' : ''}`}
+                    onMouseEnter={() => setCommandIndex(i)}
+                    onClick={() => {
+                      cmd.action();
+                      setShowCommandPalette(false);
+                      setCommandSearch('');
+                      setCommandIndex(0);
+                    }}
+                    style={{
+                      padding: '12px 20px',
+                      cursor: 'pointer',
+                      color: '#fff',
+                      fontSize: '14px',
+                      background: i === commandIndex ? '#3e3e42' : 'transparent',
+                      borderLeft: i === commandIndex ? '3px solid #4fc3f7' : '3px solid transparent'
+                    }}
+                  >
+                    {cmd.label}
+                  </div>
+                ))
+              ) : (
+                <div style={{
+                  padding: '20px',
+                  textAlign: 'center',
+                  color: '#888',
+                  fontSize: '14px'
+                }}>
+                  No commands found
                 </div>
-              ))}
+              )}
             </div>
-            <button onClick={() => setShowCommandPalette(false)} className="modal-close-btn">×</button>
+            <button 
+              onClick={() => setShowCommandPalette(false)} 
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                background: 'none',
+                border: 'none',
+                color: '#888',
+                fontSize: '24px',
+                cursor: 'pointer',
+                padding: '0',
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '4px'
+              }}
+              onMouseEnter={(e) => e.target.style.background = '#3e3e42'}
+              onMouseLeave={(e) => e.target.style.background = 'transparent'}
+            >
+              ×
+            </button>
           </div>
         </div>
       )}
