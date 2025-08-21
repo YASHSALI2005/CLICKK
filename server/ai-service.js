@@ -387,6 +387,48 @@ Be helpful, concise, and focus on practical solutions. Always consider the curre
   }
 
   async processMessage(message, agent, context) {
+    // Pre-detect project creation intents (e.g., React app requests) and generate
+    // a structured project_creation response without relying on provider output.
+    const detectReactProjectRequest = (msg) => {
+      try {
+        if (!msg) return null;
+        const m = String(msg).toLowerCase();
+        const mentionsReact = /(react\s*(based)?\s*(project|app))|((create|make|build|generate).*(react).*(project|app))/i.test(m);
+        if (!mentionsReact) return null;
+        // Try to extract a target folder name, e.g. "inside an yash chatbot folder"
+        let folderMatch = m.match(/(?:inside|in)\s+(?:an\s+|a\s+|the\s+)?([\w\-\s]+?)\s+folder/);
+        let folder = folderMatch ? folderMatch[1] : null;
+        if (!folder) {
+          // Look for patterns like "in folder <name>" or quoted names
+          const alt = m.match(/folder\s+([\w\-\s]+)/) || m.match(/"([\w\-\s]+?)"/);
+          folder = alt ? alt[1] : null;
+        }
+        if (!folder) folder = 'my-react-app';
+        const normalizedFolder = folder.trim().replace(/[^a-z0-9\-\s]/gi, '').replace(/\s+/g, '-');
+        // Prefer Create React App by default (works on Node 18)
+        const commands = [
+          { description: 'Create React app (CRA)', command: `npx create-react-app "${normalizedFolder}"` },
+          { description: 'Start dev server', command: `cd "${normalizedFolder}" && npm start` }
+        ];
+        return {
+          success: true,
+          response: `Creating a proper React app (CRA) in folder \`${normalizedFolder}\`...\n\nI will run project creation commands instead of dumping files.`,
+          codeChanges: [{ type: 'project_creation', message: `Create React app in ${normalizedFolder}`, commands }],
+          suggestions: [
+            'After creation, open the new folder and start coding.',
+            'You can add routing with react-router-dom and adjust scripts as needed.'
+          ]
+        };
+      } catch {
+        return null;
+      }
+    };
+
+    // If we detect a React project creation request, handle it locally.
+    const pre = detectReactProjectRequest(message);
+    if (pre) {
+      return pre;
+    }
     // Remove the code-changes and suggestions sections from the response
     const cleanResponse = (response) => {
       return response

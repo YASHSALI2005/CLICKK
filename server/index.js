@@ -29,7 +29,9 @@ const PROJECT_ROOT = path.join(__dirname, 'projects', 'demo');
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+// Increase request body limits to avoid PayloadTooLargeError when sending large JSON payloads
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // Serve static files from the React build directory
 app.use(express.static(path.join(__dirname, '../client/build')));
@@ -247,6 +249,249 @@ app.post('/api/new-workspace', (req, res) => {
   }
 });
 
+// -----------------------------
+// Git integration endpoints
+// -----------------------------
+
+function runGitCommand(cwd, command) {
+  return new Promise((resolve) => {
+    exec(command, { cwd }, (error, stdout, stderr) => {
+      resolve({ error, stdout, stderr });
+    });
+  });
+}
+
+app.get('/api/git/status', async (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    const gitDir = path.join(projectRoot, '.git');
+    const result = { initialized: false, branch: null, status: { staged: [], modified: [], untracked: [] } };
+    if (!fs.existsSync(projectRoot)) fs.mkdirSync(projectRoot, { recursive: true });
+    if (!fs.existsSync(gitDir)) {
+      return res.json(result);
+    }
+    result.initialized = true;
+    // Branch name
+    const branchOut = await runGitCommand(projectRoot, 'git rev-parse --abbrev-ref HEAD');
+    result.branch = (branchOut.stdout || '').trim() || null;
+    const { stdout } = await runGitCommand(projectRoot, 'git status --porcelain');
+    const lines = (stdout || '').split('\n').map(l => l.trim()).filter(Boolean);
+    const staged = [];
+    const modified = [];
+    const untracked = [];
+    for (const line of lines) {
+      if (line.startsWith('?? ')) {
+        untracked.push(line.slice(3));
+        continue;
+      }
+      const indexStatus = line[0];
+      const workTreeStatus = line[1];
+      let filePath = line.slice(3);
+      // Handle rename lines: R  old -> new
+      if (filePath.includes(' -> ')) {
+        filePath = filePath.split(' -> ').pop();
+      }
+      if (indexStatus && indexStatus !== ' ') {
+        staged.push(filePath);
+      } else if (workTreeStatus && workTreeStatus !== ' ') {
+        modified.push(filePath);
+      }
+    }
+    result.status = { staged, modified, untracked };
+    res.json(result);
+  } catch (err) {
+    console.error('git status error:', err);
+    res.status(500).json({ error: 'git status failed' });
+  }
+});
+
+app.post('/api/git/init', async (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    if (!fs.existsSync(projectRoot)) fs.mkdirSync(projectRoot, { recursive: true });
+    const { stdout, stderr, error } = await runGitCommand(projectRoot, 'git init');
+    if (error) return res.status(500).json({ error: stderr || 'git init failed' });
+    res.json({ success: true, output: stdout });
+  } catch (err) {
+    console.error('git init error:', err);
+    res.status(500).json({ error: 'git init failed' });
+  }
+});
+
+app.post('/api/git/add', async (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    const { all, paths } = req.body || {};
+    let cmd = 'git add ';
+    if (all || !paths || paths.length === 0) {
+      cmd += '-A';
+    } else {
+      const quoted = paths.map(p => `"${p}"`).join(' ');
+      cmd += quoted;
+    }
+    const { stdout, stderr, error } = await runGitCommand(projectRoot, cmd);
+    if (error) {
+      const errText = String(stderr || '').toLowerCase();
+      if (errText.includes('did not match any files')) {
+        return res.json({ success: true, output: 'Nothing to add' });
+      }
+      return res.status(500).json({ error: stderr || 'git add failed' });
+    }
+    res.json({ success: true, output: stdout });
+  } catch (err) {
+    console.error('git add error:', err);
+    res.status(500).json({ error: 'git add failed' });
+  }
+});
+
+app.post('/api/git/reset', async (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    const { all, paths } = req.body || {};
+    let cmd = 'git reset ';
+    if (all || !paths || paths.length === 0) {
+      // Unstage all changes
+      cmd += 'HEAD --';
+    } else {
+      const quoted = paths.map(p => `-- "${p}"`).join(' ');
+      cmd += `HEAD ${quoted}`;
+    }
+    const { stdout, stderr, error } = await runGitCommand(projectRoot, cmd);
+    if (error) return res.status(500).json({ error: stderr || 'git reset failed' });
+    res.json({ success: true, output: stdout });
+  } catch (err) {
+    console.error('git reset error:', err);
+    res.status(500).json({ error: 'git reset failed' });
+  }
+});
+
+app.post('/api/git/commit', async (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    const { message, authorName, authorEmail } = req.body || {};
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ error: 'Commit message is required' });
+    }
+    // Set local user if provided, otherwise ensure some identity to prevent failure
+    if (authorName && authorEmail) {
+      await runGitCommand(projectRoot, `git config user.name "${authorName}"`);
+      await runGitCommand(projectRoot, `git config user.email "${authorEmail}"`);
+    }
+    // Commit (avoid gpg interference)
+    const { stdout, stderr, error } = await runGitCommand(projectRoot, `git commit -m "${message.replace(/"/g, '\\"')}" --no-gpg-sign`);
+    if (error) return res.status(500).json({ error: stderr || 'git commit failed' });
+    res.json({ success: true, output: stdout });
+  } catch (err) {
+    console.error('git commit error:', err);
+    res.status(500).json({ error: 'git commit failed' });
+  }
+});
+
+app.get('/api/git/log', async (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
+    const { stdout, stderr, error } = await runGitCommand(projectRoot, `git log -n ${limit} --pretty=format:%H%x09%an%x09%ae%x09%ad%x09%s`);
+    if (error) return res.status(500).json({ error: stderr || 'git log failed' });
+    const commits = (stdout || '').split('\n').filter(Boolean).map(line => {
+      const [hash, author, email, date, ...rest] = line.split('\t');
+      return { hash, author, email, date, message: rest.join('\t') };
+    });
+    res.json({ commits });
+  } catch (err) {
+    console.error('git log error:', err);
+    res.status(500).json({ error: 'git log failed' });
+  }
+});
+
+// Branch helpers
+app.get('/api/git/branch', async (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    const { stdout, stderr, error } = await runGitCommand(projectRoot, 'git rev-parse --abbrev-ref HEAD');
+    if (error) return res.status(500).json({ error: stderr || 'git branch failed' });
+    res.json({ branch: (stdout || '').trim() });
+  } catch (err) {
+    console.error('git branch error:', err);
+    res.status(500).json({ error: 'git branch failed' });
+  }
+});
+
+// Remote helpers
+app.get('/api/git/remote', async (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    const { stdout } = await runGitCommand(projectRoot, 'git remote -v');
+    res.json({ remotes: (stdout || '').split('\n').filter(Boolean) });
+  } catch (err) {
+    console.error('git remote get error:', err);
+    res.status(500).json({ error: 'git remote failed' });
+  }
+});
+
+app.post('/api/git/remote', async (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    const { name = 'origin', url } = req.body || {};
+    if (!url) return res.status(400).json({ error: 'remote url required' });
+    // Try set-url, if fails add
+    let r = await runGitCommand(projectRoot, `git remote set-url ${name} "${url}"`);
+    if (r.error) {
+      r = await runGitCommand(projectRoot, `git remote add ${name} "${url}"`);
+      if (r.error) return res.status(500).json({ error: r.stderr || 'git remote add failed' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('git remote set error:', err);
+    res.status(500).json({ error: 'git remote set failed' });
+  }
+});
+
+// Push
+app.post('/api/git/push', async (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    const { remote = 'origin', branch } = req.body || {};
+    const currentBranch = branch || (await runGitCommand(projectRoot, 'git rev-parse --abbrev-ref HEAD')).stdout.trim();
+    const { stdout, stderr, error } = await runGitCommand(projectRoot, `git push ${remote} ${currentBranch}`);
+    if (error) return res.status(500).json({ error: stderr || 'git push failed' });
+    res.json({ success: true, output: stdout });
+  } catch (err) {
+    console.error('git push error:', err);
+    res.status(500).json({ error: 'git push failed' });
+  }
+});
+
+// Discard changes to file
+app.post('/api/git/discard', async (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    const { path: filePath } = req.body || {};
+    if (!filePath) return res.status(400).json({ error: 'path required' });
+    const { stdout, stderr, error } = await runGitCommand(projectRoot, `git checkout -- "${filePath}"`);
+    if (error) return res.status(500).json({ error: stderr || 'git discard failed' });
+    res.json({ success: true, output: stdout });
+  } catch (err) {
+    console.error('git discard error:', err);
+    res.status(500).json({ error: 'git discard failed' });
+  }
+});
+
+// Clean untracked (careful!)
+app.post('/api/git/clean', async (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    const { path: targetPath } = req.body || {};
+    const cmd = targetPath ? `git clean -fd -- "${targetPath}"` : 'git clean -fd';
+    const { stdout, stderr, error } = await runGitCommand(projectRoot, cmd);
+    if (error) return res.status(500).json({ error: stderr || 'git clean failed' });
+    res.json({ success: true, output: stdout });
+  } catch (err) {
+    console.error('git clean error:', err);
+    res.status(500).json({ error: 'git clean failed' });
+  }
+});
+
 // const wss = new WebSocket.Server({ port: 8081 });
 
 // wss.on('connection', function connection(ws) {
@@ -343,33 +588,40 @@ app.post('/api/ai/chat', async (req, res) => {
       const projectRoot = getProjectRoot(req);
       
       // Process each code change
+      let appliedAny = false;
       for (const change of result.codeChanges) {
-        const filePath = path.join(projectRoot, change.file);
-        
-        if (change.type === 'modify') {
+        if (change.type === 'modify' || change.type === 'create') {
+          if (!change.file) {
+            console.warn('Skipping change without file path:', change);
+            continue;
+          }
+          const filePath = path.join(projectRoot, change.file);
           // Ensure directory exists for the file
           const fileDir = path.dirname(filePath);
           if (!fs.existsSync(fileDir)) {
             fs.mkdirSync(fileDir, { recursive: true });
           }
-          // Write the modified content to the file
-          fs.writeFileSync(filePath, change.newContent);
-          console.log(`Modified file: ${change.file}`);
-        } 
-        else if (change.type === 'create') {
-          // Ensure directory exists for the file
-          const fileDir = path.dirname(filePath);
-          if (!fs.existsSync(fileDir)) {
-            fs.mkdirSync(fileDir, { recursive: true });
+          if (change.type === 'modify') {
+            // Write the modified content to the file
+            fs.writeFileSync(filePath, change.newContent || '');
+            console.log(`Modified file: ${change.file}`);
+            appliedAny = true;
+          } else {
+            // Create the new file with the provided content
+            fs.writeFileSync(filePath, change.newContent || '');
+            console.log(`Created file: ${change.file}`);
+            appliedAny = true;
           }
-          // Create the new file with the provided content
-          fs.writeFileSync(filePath, change.newContent);
-          console.log(`Created file: ${change.file}`);
+        } else if (change.type === 'project_creation') {
+          // Handled on client via execute-command; no file I/O here
+          continue;
         }
       }
       
-      // Add a flag to indicate changes were automatically applied
-      result.changesApplied = true;
+      // Add a flag only if we actually wrote files
+      if (appliedAny) {
+        result.changesApplied = true;
+      }
     }
     
     res.json(result);

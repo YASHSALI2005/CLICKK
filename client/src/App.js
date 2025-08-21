@@ -28,35 +28,35 @@ import AIAssistant from './components/AIAssistant';
     key: 'source',
     title: 'Source Control',
     svg: (
-      <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/><path d="M7 10v4a4 4 0 0 0 4 4h3"/></svg>
+      <img src="/git.png  "alt="Settings" width="24" height="24" style={{ filter: 'invert(1)' }} />
     )
   },
   {
     key: 'terminal',
     title: 'Terminal',
     svg: (
-      <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 17h16M8 9l3 3-3 3"/><rect x="3" y="5" width="18" height="14" rx="2"/></svg>
+      <img src="/terminal.png  "alt="Settings" width="24" height="24" style={{ filter: 'invert(1)' }} />
     )
   },
   {
     key: 'ai',
     title: 'AI Assistant',
     svg: (
-      <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8"/><path d="M8 13h6"/></svg>
+      <img src="/ai.png  "alt="Settings" width="24" height="24" style={{ filter: 'invert(1)' }} />
     )
   },
   {
     key: 'extensions',
     title: 'Extensions',
     svg: (
-      <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/><path d="M7 7l10 10"/></svg>
+      <img src="/extension.png  "alt="Settings" width="24" height="24" style={{ filter: 'invert(1)' }} />
     )
   },
      {
      key: 'settings',
      title: 'Settings',
      svg: (
-       <img src="/gear.png" alt="Settings" width="24" height="24" style={{ filter: 'invert(1)' }} />
+       <img src="/gear.png  "alt="Settings" width="24" height="24" style={{ filter: 'invert(1)' }} />
      )
    }
 ];
@@ -155,6 +155,14 @@ export default function App() {
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
   const terminalRefs = useRef(new Map());
+  const editorRef = useRef(null);
+  const [gitInitialized, setGitInitialized] = useState(false);
+  const [gitStatus, setGitStatus] = useState({ staged: [], modified: [], untracked: [] });
+  const [commitMessage, setCommitMessage] = useState('');
+  const [gitBranch, setGitBranch] = useState(null);
+  const [gitRemotes, setGitRemotes] = useState([]);
+  const [showStagedSection, setShowStagedSection] = useState(true);
+  const [showChangesSection, setShowChangesSection] = useState(true);
   
   const showNotification = (msg) => {
     setNotification(msg);
@@ -182,6 +190,92 @@ export default function App() {
       setFiles([]);
     }
   }, [workspace]);
+
+  const fetchGitStatus = async () => {
+    try {
+      const res = await axios.get(`/api/git/status?workspace=${workspace}`);
+      setGitInitialized(!!res.data.initialized);
+      if (res.data.status) setGitStatus(res.data.status);
+      if (res.data.branch) setGitBranch(res.data.branch);
+      try {
+        const r = await axios.get(`/api/git/remote?workspace=${workspace}`);
+        setGitRemotes(Array.isArray(r.data.remotes) ? r.data.remotes : []);
+      } catch {}
+    } catch (e) {
+      console.error('git status failed', e);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSidebar === 'source') {
+      fetchGitStatus();
+    }
+  }, [activeSidebar, workspace]);
+
+  const gitInit = async () => {
+    try {
+      await axios.post('/api/git/init', { workspace });
+      showNotification('Initialized empty Git repository');
+      fetchGitStatus();
+    } catch (e) {
+      showNotification('Git init failed');
+    }
+  };
+
+  const gitAddPaths = async (paths) => {
+    try {
+      await axios.post('/api/git/add', { workspace, paths });
+      fetchGitStatus();
+    } catch (e) {
+      showNotification('git add failed');
+    }
+  };
+
+  const gitResetPaths = async (paths) => {
+    try {
+      await axios.post('/api/git/reset', { workspace, paths });
+      fetchGitStatus();
+    } catch (e) {
+      showNotification('git reset failed');
+    }
+  };
+
+  const gitAddAll = async () => { await gitAddPaths([]); };
+  const gitResetAll = async () => { await gitResetPaths([]); };
+
+  const gitCommit = async () => {
+    if (!commitMessage.trim()) { showNotification('Enter a commit message'); return; }
+    try {
+      await axios.post('/api/git/commit', { workspace, message: commitMessage, authorName: 'Clickk', authorEmail: 'clickk@example.com' });
+      setCommitMessage('');
+      showNotification('Committed changes');
+      fetchGitStatus();
+    } catch (e) {
+      showNotification('git commit failed');
+    }
+  };
+
+  const gitPublish = async () => {
+    try {
+      const url = prompt('Enter remote URL to publish (e.g. https://github.com/user/repo.git):');
+      if (!url) return;
+      await axios.post('/api/git/remote', { workspace, url });
+      await axios.post('/api/git/push', { workspace });
+      showNotification('Published branch');
+      fetchGitStatus();
+    } catch (e) {
+      showNotification('Publish failed');
+    }
+  };
+
+  const gitPush = async () => {
+    try {
+      await axios.post('/api/git/push', { workspace });
+      showNotification('Pushed successfully');
+    } catch (e) {
+      showNotification('Push failed');
+    }
+  };
 
   // Removed auto-opening of first file - user must manually open files
 
@@ -725,33 +819,90 @@ export default function App() {
     if (activeSidebar === 'source') {
       return (
         <div className="explorer">
-          <div className="explorer-title">Source Control</div>
-          <div style={{padding:'12px'}}>
-            <div style={{marginBottom:'12px',color:'#bdbdbd'}}>Git Commands</div>
-            <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-              <button 
-                onClick={() => {
-                  const term = terminalRefs.current.get(activeTerminal);
-                  if (showTerminal && term) {
-                    term.writeToTerminal('git status\r\n');
-                  } else {
-                    setShowTerminal(true);
-                  }
-                }}
-                style={{
-                  background: '#4fc3f7',
-                  color: '#181a1b',
-                  border: 'none',
-                  borderRadius: 4,
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  fontSize: '0.9rem',
-                  fontWeight: 600
-                }}
-              >
-                Git Status
-              </button>
+          <div className="explorer-title" style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+            <span>Source Control{gitBranch ? ` — ${gitBranch}` : ''}</span>
+            <div style={{display:'flex', gap:8, alignItems:'center'}}>
+              <button onClick={fetchGitStatus} title="Refresh" style={{ background:'transparent', color:'#bdbdbd', border:'1px solid #3e3e42', borderRadius:4, padding:'4px 8px', cursor:'pointer' }}>↻</button>
+              {gitRemotes && gitRemotes.length > 0 ? (
+                <button onClick={gitPush} title="Push" style={{ background:'transparent', color:'#4fc3f7', border:'1px solid #4fc3f7', borderRadius:4, padding:'4px 8px', cursor:'pointer' }}>⬆ Push</button>
+              ) : null}
             </div>
+          </div>
+          <div style={{padding:'12px', display:'flex', flexDirection:'column', gap:'12px'}}>
+            {!gitInitialized ? (
+              <button
+                onClick={gitInit}
+                style={{ background:'#4fc3f7', color:'#181a1b', border:'none', borderRadius:4, padding:'8px 12px', cursor:'pointer', fontWeight:600 }}
+              >Initialize Repository</button>
+            ) : (
+              <>
+                {(!gitRemotes || gitRemotes.length === 0) && (
+                  <button onClick={gitPublish} style={{ background:'#2d7cf0', color:'#fff', border:'none', borderRadius:6, padding:'10px 12px', cursor:'pointer', fontWeight:600 }}>Publish Branch</button>
+                )}
+                <div>
+                  <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+                    <button onClick={() => setShowStagedSection(v=>!v)} style={{ background:'transparent', color:'#bdbdbd', border:'none', cursor:'pointer', fontWeight:600 }}>
+                      {showStagedSection ? '▾' : '▸'} Staged ({gitStatus.staged.length})
+                    </button>
+                    <div style={{display:'flex', gap:6}}>
+                      <button onClick={gitResetAll} style={{ background:'transparent', color:'#e57373', border:'1px solid #e57373', borderRadius:4, padding:'2px 8px', cursor:'pointer' }}>Unstage All</button>
+                    </div>
+                  </div>
+                  {showStagedSection && (
+                    gitStatus.staged.length === 0 ? <div style={{color:'#777', fontSize:12}}>No staged files</div> : (
+                      <ul className="file-list">
+                        {gitStatus.staged.map(f => (
+                          <li key={`s-${f}`} className="file-item" style={{display:'flex', gap:8, alignItems:'center', justifyContent:'space-between'}}>
+                            <span onClick={() => openFile(f)} style={{overflow:'hidden', textOverflow:'ellipsis', cursor:'pointer'}} title={f}>{f}</span>
+                            <div style={{display:'flex', gap:6}}>
+                              <button onClick={() => gitResetPaths([f])} style={{ background:'transparent', color:'#e57373', border:'1px solid #e57373', borderRadius:4, padding:'2px 8px', cursor:'pointer' }}>Unstage</button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )
+                  )}
+                </div>
+                <div>
+                  <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:8}}>
+                    <button onClick={() => setShowChangesSection(v=>!v)} style={{ background:'transparent', color:'#bdbdbd', border:'none', cursor:'pointer', fontWeight:600 }}>
+                      {showChangesSection ? '▾' : '▸'} Changes ({gitStatus.modified.length + gitStatus.untracked.length})
+                    </button>
+                    <div style={{display:'flex', gap:6}}>
+                      <button onClick={gitAddAll} style={{ background:'transparent', color:'#4fc3f7', border:'1px solid #4fc3f7', borderRadius:4, padding:'2px 8px', cursor:'pointer' }}>Stage All</button>
+                    </div>
+                  </div>
+                  {showChangesSection && (
+                    (gitStatus.modified.length === 0 && gitStatus.untracked.length === 0) ? <div style={{color:'#777', fontSize:12}}>No changes</div> : (
+                      <ul className="file-list">
+                        {[...gitStatus.modified.map(f => ({ f, t: 'M' })), ...gitStatus.untracked.map(f => ({ f, t: 'U' }))].map(({ f, t }) => (
+                          <li key={`c-${t}-${f}`} className="file-item" style={{display:'flex', gap:8, alignItems:'center', justifyContent:'space-between'}}>
+                            <span onClick={() => openFile(f)} style={{overflow:'hidden', textOverflow:'ellipsis', cursor:'pointer'}} title={f}>
+                              <span style={{color: t==='M' ? '#e0b060' : '#4fc3f7', marginRight:6}}>{t}</span>
+                              {f}
+                            </span>
+                            <div style={{display:'flex', gap:6}}>
+                              <button onClick={() => gitAddPaths([f])} style={{ background:'transparent', color:'#4fc3f7', border:'1px solid #4fc3f7', borderRadius:4, padding:'2px 8px', cursor:'pointer' }}>Stage</button>
+                              <button onClick={async () => { if(t==='M'){ await axios.post('/api/git/discard', { workspace, path: f }); } else { await axios.post('/api/git/clean', { workspace, path: f }); } fetchGitStatus(); }} style={{ background:'transparent', color:'#e57373', border:'1px solid #e57373', borderRadius:4, padding:'2px 8px', cursor:'pointer' }}>Discard</button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )
+                  )}
+                </div>
+                <div style={{ display:'flex', gap:8, alignItems:'center', marginTop:8 }}>
+                  <input
+                    type="text"
+                    value={commitMessage}
+                    onChange={e => setCommitMessage(e.target.value)}
+                    placeholder="Commit message"
+                    style={{ flex:1, padding:'8px 10px', borderRadius:4, border:'1px solid #333', background:'#181a1b', color:'#fff' }}
+                  />
+                  <button onClick={gitCommit} style={{ background:'#4fc3f7', color:'#181a1b', border:'none', borderRadius:4, padding:'8px 12px', cursor:'pointer', fontWeight:600 }}>Commit</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       );
@@ -923,6 +1074,18 @@ export default function App() {
     return () => window.removeEventListener('keydown', paletteHandler);
   }, [showCommandPalette, filteredCommands, commandIndex]);
 
+  // Commit with Ctrl+Enter when in Source Control
+  useEffect(() => {
+    const commitHandler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && activeSidebar === 'source') {
+        e.preventDefault();
+        gitCommit();
+      }
+    };
+    window.addEventListener('keydown', commitHandler);
+    return () => window.removeEventListener('keydown', commitHandler);
+  }, [activeSidebar, commitMessage, gitStatus]);
+
   useEffect(() => {
     if (showCommandPalette && commandInputRef.current) {
       commandInputRef.current.focus();
@@ -989,11 +1152,119 @@ export default function App() {
   
     switch (section) {
       case 'File':
-        // ... (file actions)
+        switch (true) {
+          case label === 'New File':
+          case label === 'New Text File':
+            handleAddFile('');
+            break;
+          case label === 'New Window': {
+            axios.post('/api/new-workspace', { workspace }).then((res) => {
+              const folder = res.data?.folder;
+              if (folder) {
+                window.open(`${window.location.origin}?workspace=${folder}`, '_blank');
+              }
+            }).catch(() => showNotification('Failed to create new window'));
+            break;
+          }
+          case label && label.startsWith('Open File'):
+            if (fileInputRef.current) fileInputRef.current.click();
+            break;
+          case label && label.startsWith('Open Folder'):
+            if (folderInputRef.current) folderInputRef.current.click();
+            break;
+          case label === 'Add Folder to Workspace...':
+            handleAddFolder('');
+            break;
+          case label === 'Save':
+            saveFile();
+            showNotification('Saved');
+            break;
+          case label && label.startsWith('Save As'):
+            if (!currentFile) { showNotification('No file open'); break; }
+            (async () => {
+              const newName = prompt('Save As: Enter new filename', currentFile) || '';
+              if (!newName.trim()) return;
+              try {
+                await axios.post(`/api/file?workspace=${workspace}` , { name: newName.trim(), content: code || '' });
+                setFiles((prev) => prev.includes(newName) ? prev : [...prev, newName]);
+                setOpenTabs((prev) => prev.includes(newName) ? prev : [...prev, newName]);
+                setCurrentFile(newName);
+                showNotification('Saved As');
+              } catch {
+                showNotification('Save As failed');
+              }
+            })();
+            break;
+          case label === 'Save All':
+            saveFile();
+            break;
+          case label && label.startsWith('Auto Save'):
+            setAutoSave(v => !v);
+            break;
+          case label === 'Revert File':
+            if (currentFile) openFile(currentFile);
+            break;
+          case label === 'Close Editor':
+            if (currentFile) closeTab(currentFile, { stopPropagation: () => {} });
+            break;
+          case label === 'Close Folder':
+            setFiles([]);
+            setOpenTabs([]);
+            setCurrentFile('');
+            setCode('');
+            setRunOutput('');
+            break;
+          case label === 'Close Window':
+          case label === 'Exit':
+            try { window.close(); } catch {}
+            break;
+          default:
+            break;
+        }
         return;
   
       case 'Edit':
-        // ... (edit actions)
+        if (!editorRef.current) { showNotification('Editor not ready'); return; }
+        switch (label) {
+          case 'Undo':
+            editorRef.current.trigger('keyboard', 'undo', null);
+            break;
+          case 'Redo':
+            editorRef.current.trigger('keyboard', 'redo', null);
+            break;
+          case 'Cut':
+            editorRef.current.getAction && editorRef.current.getAction('editor.action.clipboardCutAction')?.run();
+            break;
+          case 'Copy':
+            editorRef.current.getAction && editorRef.current.getAction('editor.action.clipboardCopyAction')?.run();
+            break;
+          case 'Paste':
+            editorRef.current.getAction && editorRef.current.getAction('editor.action.clipboardPasteAction')?.run();
+            break;
+          case 'Find':
+            editorRef.current.getAction && editorRef.current.getAction('actions.find')?.run();
+            break;
+          case 'Replace':
+            editorRef.current.getAction && editorRef.current.getAction('editor.action.startFindReplaceAction')?.run();
+            break;
+          case 'Find in Files':
+            setActiveSidebar('search');
+            break;
+          case 'Replace in Files':
+            setActiveSidebar('search');
+            break;
+          case 'Toggle Line Comment':
+            editorRef.current.getAction && editorRef.current.getAction('editor.action.commentLine')?.run();
+            break;
+          case 'Toggle Block Comment':
+            editorRef.current.getAction && editorRef.current.getAction('editor.action.blockComment')?.run();
+            break;
+          case 'Emmet: Expand Abbreviation':
+            (editorRef.current.getAction && editorRef.current.getAction('editor.emmet.action.expandAbbreviation')?.run());
+            break;
+          default:
+            break;
+        }
         return;
   
       case 'Terminal':
@@ -1124,6 +1395,58 @@ export default function App() {
     }
   };
 
+  // Run an array of shell commands sequentially in the integrated terminal
+  const runCommandsInTerminal = (commands) => {
+    try {
+      if (!Array.isArray(commands) || commands.length === 0) return;
+      // Ensure terminal is visible and at least one terminal exists
+      setShowTerminal(true);
+      setTerminals(current => {
+        if (current.length === 0) {
+          const newId = 1;
+          setActiveTerminal(newId);
+          return [{ id: newId, title: 'powershell' }];
+        }
+        return current;
+      });
+
+      // Give time for terminal to mount and refs to populate
+      setTimeout(() => {
+        let targetId = activeTerminal;
+        // Fallback to first available terminal id
+        if (!targetId && terminals.length > 0) {
+          targetId = terminals[0].id;
+        }
+        // As an ultimate fallback, try to get any ref from the map
+        let term = (targetId && terminalRefs.current.get(targetId)) || null;
+        if (!term) {
+          const first = Array.from(terminalRefs.current.values())[0];
+          term = first || null;
+        }
+        if (term && term.writeToTerminal) {
+          // De-duplicate accidental key repeats like 'nnppmm' and normalize whitespace
+          const normalize = (line) => line
+            .replace(/n{2,}p{2,}m{2,}/gi, 'npm')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          let delay = 0;
+          const stepMs = 900;
+          commands.forEach((cmd) => {
+            const clean = normalize(String(cmd || ''));
+            if (!clean) return;
+            setTimeout(() => {
+              term.writeToTerminal(clean + '\r\n');
+            }, delay);
+            delay += stepMs;
+          });
+        }
+      }, 900);
+    } catch (e) {
+      console.error('Failed to run commands in terminal', e);
+    }
+  };
+
   if (!showMainApp) {
     return <LandingPage onInstall={handleInstallClick} showInstallButton={showInstallButton} />;
   }
@@ -1143,6 +1466,32 @@ export default function App() {
 
   return (
     <div className="app-root" style={{background:'#181a1b', color:'#fff', minHeight:'100vh'}}>
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        onChange={async (e) => {
+          const filesArr = Array.from(e.target.files || []);
+          if (filesArr.length > 0) {
+            for (const file of filesArr) {
+              try {
+                const text = await file.text();
+                const name = file.name;
+                setFiles((prev) => prev.includes(name) ? prev : [...prev, name]);
+                setOpenTabs((prev) => prev.includes(name) ? prev : [...prev, name]);
+                setCode(text);
+                setCurrentFile(name);
+                setRunOutput('');
+              } catch (err) {
+                console.error('Failed opening file:', err);
+                showNotification('Failed to open file');
+              }
+            }
+          }
+          e.target.value = '';
+        }}
+        multiple
+      />
       <input
         type="file"
         ref={folderInputRef}
@@ -1328,6 +1677,7 @@ export default function App() {
                   defaultLanguage={getLanguage(currentFile)}
                   value={code || ''}
                   onChange={(value) => setCode(value || '')}
+                  onMount={(editor) => { editorRef.current = editor; }}
                   theme="vs-dark"
                   options={{
                     minimap: { enabled: false },
@@ -1751,6 +2101,8 @@ export default function App() {
               onCodeChange={setCode}
               onFileCreate={handleFileCreate}
               onFileOpen={openFile}
+              onClose={() => setIsAIAssistantVisible(false)}
+              onRunCommands={(cmds) => runCommandsInTerminal(cmds)}
             />
           </div>
         )}

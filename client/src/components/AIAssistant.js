@@ -133,7 +133,9 @@ const AIAssistant = ({
   workspace,
   onCodeChange,
   onFileCreate,
-  onFileOpen
+  onFileOpen,
+  onClose,
+  onRunCommands
 }) => {
   const [messages, setMessages] = useState(() => {
     try {
@@ -259,6 +261,16 @@ const AIAssistant = ({
             timestamp: new Date().toLocaleTimeString()
           }
         ]);
+        // Auto-run project creation commands when present
+        try {
+          if (data.codeChanges && Array.isArray(data.codeChanges)) {
+            data.codeChanges
+              .filter(change => change && change.type === 'project_creation')
+              .forEach(pc => executeProjectCreationCommand(pc));
+          }
+        } catch (e) {
+          console.warn('Auto-run project creation failed:', e);
+        }
       } else {
         setMessages(prev => [
           ...prev,
@@ -304,38 +316,117 @@ const AIAssistant = ({
         }
       ]);
       
-      // Call the API to execute the command
-      const response = await fetch('/api/execute-command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          command: commandToExecute.command,
-          workspace: workspace
-        })
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        setMessages(prev => [
-          ...prev,
-          {
-            id: Date.now(),
-            type: 'system',
-            content: `Command executed successfully!\n\nOutput:\n${result.output}`,
-            timestamp: new Date().toLocaleTimeString()
+      // Prefer executing inside integrated terminal so user sees progress
+      if (onRunCommands) {
+        // Normalize commands to avoid repeated nested `cd` calls across steps.
+        const cmds = change.commands.map(c => String(c.command || ''));
+        const createCmd = cmds.find(c => /create\s+vite|create-react-app/i.test(c));
+        // Try to detect target folder from create vite/cra or cd command
+        let folder = null;
+        const fromCreate = (createCmd || '').match(/"([^"]+)"/) || (createCmd || '').match(/\s([\w\-\.]+)(?:\s|$)/);
+        if (fromCreate && fromCreate[1]) folder = fromCreate[1];
+        if (!folder) {
+          for (const c of cmds) {
+            const m = c.match(/\bcd\b\s+"?([^"&]+)"?/i);
+            if (m && m[1]) { folder = m[1]; break; }
           }
-        ]);
-      } else {
-        setMessages(prev => [
-          ...prev,
-          {
-            id: Date.now(),
-            type: 'error',
-            content: `Command execution failed: ${result.error}\n\nOutput:\n${result.stdout || ''}\n\nError:\n${result.stderr || ''}`,
-            timestamp: new Date().toLocaleTimeString()
-          }
-        ]);
+        }
+        // Force CRA when the create command is Vite, to satisfy Node 18
+        if (/create\s+vite/i.test(createCmd || '')) {
+          const craCreate = `npx create-react-app "${folder || 'my-react-app'}"`;
+          const sequence = [craCreate, folder ? `cd "${folder}" && npm start` : null].filter(Boolean);
+          onRunCommands(sequence);
+        } else {
+          const hasInstall = cmds.some(c => /npm\s+install/i.test(c));
+          const hasDev = cmds.some(c => /npm\s+run\s+dev/i.test(c));
+          const chained = folder ? [
+            [hasInstall || hasDev ? `cd "${folder}"` : null,
+             hasInstall ? 'npm install' : null,
+             hasDev ? 'npm run dev -- --host' : null].filter(Boolean).join(' && ')
+          ] : [];
+          const sequence = [createCmd, ...chained].filter(Boolean);
+          onRunCommands(sequence.length > 0 ? sequence : cmds);
+        }
+        // We've executed via the integrated terminal; skip server fallback to avoid duplicate/conflicting runs
+        return;
+      }
+
+      // Fallback path: if no terminal handler provided, execute first command server-side
+      try {
+        const response = await fetch('/api/execute-command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            command: commandToExecute.command,
+            workspace: workspace
+          })
+        });
+        const result = await response.json();
+        if (result.success) {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now(),
+              type: 'system',
+              content: `Command executed successfully!\n\nOutput:\n${result.output}`,
+              timestamp: new Date().toLocaleTimeString()
+            }
+          ]);
+        } else {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now(),
+              type: 'error',
+              content: `Command execution failed: ${result.error}\n\nOutput:\n${result.stdout || ''}\n\nError:\n${result.stderr || ''}`,
+              timestamp: new Date().toLocaleTimeString()
+            }
+          ]);
+          // Detect Node version or create-vite issues and fallback to CRA
+          try {
+            const lower = `${result.error || ''} ${result.stderr || ''}`.toLowerCase();
+            const looksEngineIssue = lower.includes('ebadengine') || lower.includes('not recognized') || lower.includes('create-vite');
+            const targetNotEmpty = lower.includes('target directory') && lower.includes('not empty');
+            if (looksEngineIssue && onRunCommands) {
+              const cmd = commandToExecute.command || '';
+              const m = cmd.match(/create\s+vite[^\s]*\s+"([^"]+)"/i) || cmd.match(/create\s+vite[^\s]*\s+([^\s]+)(?:\s|$)/i);
+              const folder = (m && m[1]) ? m[1] : 'my-react-app';
+              const fallbacks = [
+                `npx create-react-app "${folder}"`,
+                `cd "${folder}" && npm start`
+              ];
+              setMessages(prev => [
+                ...prev,
+                {
+                  id: Date.now() + 100,
+                  type: 'system',
+                  content: `Detected create-vite engine issue. Falling back to Create React App...`,
+                  timestamp: new Date().toLocaleTimeString()
+                }
+              ]);
+              onRunCommands(fallbacks);
+            } else if (targetNotEmpty && onRunCommands) {
+              // If the folder already exists, just install dependencies and start dev server
+              const cmd = commandToExecute.command || '';
+              const m = cmd.match(/create\s+vite[^\s]*\s+"([^"]+)"/i) || cmd.match(/create\s+vite[^\s]*\s+([^\s]+)(?:\s|$)/i);
+              const folder = (m && m[1]) ? m[1] : null;
+              if (folder) {
+                setMessages(prev => [
+                  ...prev,
+                  {
+                    id: Date.now() + 101,
+                    type: 'system',
+                    content: `Folder already exists. Installing dependencies and starting dev server...`,
+                    timestamp: new Date().toLocaleTimeString()
+                  }
+                ]);
+                onRunCommands([`cd "${folder}" && npm install && npm run dev -- --host`]);
+              }
+            }
+          } catch {}
+        }
+      } catch (e) {
+        console.warn('Fallback execute-command failed:', e);
       }
     } catch (error) {
       console.error('Error executing command:', error);
@@ -590,7 +681,7 @@ const AIAssistant = ({
               <polyline points="12 6 12 12 16 14" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </button>
-          <div className="agent-selector">
+          <div className="agent-selector" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <select
               value={selectedAgent}
               onChange={e => setSelectedAgent(e.target.value)}
@@ -611,6 +702,24 @@ const AIAssistant = ({
                 <option key={agent.id} value={agent.id}>{agent.name}</option>
               ))}
             </select>
+            <button
+              onClick={() => onClose && onClose()}
+              title="Close AI Assistant"
+              style={{
+                background: 'transparent',
+                border: '1px solid #3e5575',
+                color: '#9ab',
+                width: 26,
+                height: 26,
+                borderRadius: 6,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              ×
+            </button>
           </div>
         </div>
       </div>
