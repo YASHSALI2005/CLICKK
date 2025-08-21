@@ -137,6 +137,7 @@ export default function App() {
   const [openFolders, setOpenFolders] = useState({});
   const [folderMenu, setFolderMenu] = useState({ path: null, anchor: null });
   const [fileMenu, setFileMenu] = useState({ path: null, anchor: null });
+  const [tabMenu, setTabMenu] = useState({ path: null, anchor: null });
   
   const [recentFiles, setRecentFiles] = useState([]);
   const [showPreferences, setShowPreferences] = useState(false);
@@ -147,6 +148,9 @@ export default function App() {
   const isResizingRef = useRef(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [explorerOpen, setExplorerOpen] = useState(true);
+  const [explorerWidth, setExplorerWidth] = useState(280);
+  const explorerRef = useRef(null);
+  const tabsContainerRef = useRef(null);
   const [terminals, setTerminals] = useState([]);
   const [activeTerminal, setActiveTerminal] = useState(null);
   const [isSplitView, setIsSplitView] = useState(false); // New state for split view
@@ -165,8 +169,12 @@ export default function App() {
   const [showChangesSection, setShowChangesSection] = useState(true);
   
   const showNotification = (msg) => {
-    setNotification(msg);
-    setTimeout(() => setNotification(''), 2000);
+    try {
+      setNotification(msg);
+      setTimeout(() => setNotification(''), 2000);
+    } catch (error) {
+      console.error('Error showing notification:', error);
+    }
   };
 
   useEffect(() => {
@@ -280,9 +288,12 @@ export default function App() {
   // Removed auto-opening of first file - user must manually open files
 
   const saveFile = () => {
-    if (!currentFile || !code) return;
+    if (!currentFile || code === undefined) return;
     try {
-      axios.post(`/api/file?workspace=${workspace}`, { name: currentFile, content: code })
+      axios.post(`/api/file?workspace=${workspace}`, { name: currentFile, content: code || '' })
+        .then(() => {
+          showNotification('File saved');
+        })
         .catch(error => {
           console.error('Save failed:', error);
           showNotification('Failed to save file');
@@ -313,12 +324,20 @@ export default function App() {
     }
     
     try {
+      // Save current file if it's different and has changes
       if (currentFile && code !== undefined && currentFile !== name) {
         saveFile();
       }
-      setCurrentFile(name);
-      if (!openTabs.includes(name)) setOpenTabs([...openTabs, name]);
       
+      // Set current file
+      setCurrentFile(name);
+      
+      // Add to open tabs if not already there
+      if (!openTabs.includes(name)) {
+        setOpenTabs(prev => [...prev, name]);
+      }
+      
+      // Load file content
       axios.get(`/api/file?workspace=${workspace}&name=${encodeURIComponent(name)}`)
         .then(fileRes => {
           if (fileRes.data && fileRes.data.content !== undefined) {
@@ -356,38 +375,53 @@ export default function App() {
   };
 
   const handleDeleteFile = async (name, e) => {
-    e.stopPropagation();
-    if (!window.confirm(`Delete file '${name}'?`)) return;
-    await axios.delete(`/api/file?workspace=${workspace}&name=${encodeURIComponent(name)}`);
-    setFiles(files.filter(f => f !== name));
-    setOpenTabs(openTabs.filter(f => f !== name));
-    if (currentFile === name) {
-      setCurrentFile('');
-      setCode('');
-      setRunOutput('');
+    try {
+      e.stopPropagation();
+      if (!window.confirm(`Delete file '${name}'?`)) return;
+      
+      await axios.delete(`/api/file?workspace=${workspace}&name=${encodeURIComponent(name)}`);
+      setFiles(files.filter(f => f !== name));
+      setOpenTabs(openTabs.filter(f => f !== name));
+      
+      if (currentFile === name) {
+        setCurrentFile('');
+        setCode('');
+        setRunOutput('');
+      }
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      showNotification('Failed to delete file');
     }
   };
 
   const handleAddFile = async (parentPath = '') => {
-    if (typeof parentPath !== 'string') parentPath = '';
-    let name = prompt('Enter new file name (e.g. myfile.js):');
-    if (!name) return;
-    name = String(name).replace(/\\/g, '/').replace(/\/+$/, '').replace(/\//g, '').trim();
-    if (!name) return;
-    const fullPath = parentPath ? String(parentPath) + name : name;
-    if (fullPath.startsWith('[object Object]')) {
-      alert('Invalid file name.');
-      return;
-    }
-    await axios.post(`/api/file?workspace=${workspace}`, { name: fullPath, content: '' });
-    axios.get(`/api/files?workspace=${workspace}`).then(fileRes => {
+    try {
+      if (typeof parentPath !== 'string') parentPath = '';
+      let name = prompt('Enter new file name (e.g. myfile.js):');
+      if (!name) return;
+      
+      name = String(name).replace(/\\/g, '/').replace(/\/+$/, '').replace(/\//g, '').trim();
+      if (!name) return;
+      
+      const fullPath = parentPath ? String(parentPath) + name : name;
+      if (fullPath.startsWith('[object Object]') || !fullPath) {
+        alert('Invalid file name.');
+        return;
+      }
+      
+      await axios.post(`/api/file?workspace=${workspace}`, { name: fullPath, content: '' });
+      
+      const fileRes = await axios.get(`/api/files?workspace=${workspace}`);
       const filtered = fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]'));
       setFiles(filtered);
       setCurrentFile(fullPath);
       setOpenTabs(tabs => tabs.includes(fullPath) ? tabs : [...tabs, fullPath]);
       setCode('');
       setRunOutput('');
-    });
+    } catch (error) {
+      console.error('Error creating file:', error);
+      showNotification('Failed to create file');
+    }
   };
 
   const handleFileCreate = async (fileName, content) => {
@@ -403,40 +437,51 @@ export default function App() {
   };
 
   const handleAddFolder = async (parentPath = '') => {
-    if (typeof parentPath !== 'string') parentPath = '';
-    let name = prompt('Enter new folder name:');
-    if (!name) return;
-    name = String(name).replace(/\\/g, '/').replace(/\/+$/, '').replace(/\//g, '').trim();
-    if (!name) return;
-    const folderPath = parentPath ? String(parentPath) + name + '/' : name + '/';
-    if (folderPath.startsWith('[object Object]')) {
-      alert('Invalid folder name.');
-      return;
-    }
-    if (!parentPath && files.includes(name)) {
-      alert('A file with this name already exists at the root. Please choose a different folder name.');
-      return;
-    }
     try {
+      if (typeof parentPath !== 'string') parentPath = '';
+      let name = prompt('Enter new folder name:');
+      if (!name) return;
+      
+      name = String(name).replace(/\\/g, '/').replace(/\/+$/, '').replace(/\//g, '').trim();
+      if (!name) return;
+      
+      const folderPath = parentPath ? String(parentPath) + name + '/' : name + '/';
+      if (folderPath.startsWith('[object Object]') || !folderPath) {
+        alert('Invalid folder name.');
+        return;
+      }
+      
+      if (!parentPath && files.includes(name)) {
+        alert('A file with this name already exists at the root. Please choose a different folder name.');
+        return;
+      }
+      
       await axios.post(`/api/file?workspace=${workspace}`, { name: folderPath, content: '' });
       const folderRes = await axios.get(`/api/files?workspace=${workspace}`);
       setFiles(folderRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
     } catch (error) {
       console.error('Error creating folder:', error);
-      alert('Failed to create folder');
+      showNotification('Failed to create folder');
     }
   };
 
   const handleDeleteFolder = async (name, e) => {
-    e.stopPropagation();
-    if (!window.confirm(`Delete folder '${name}' and all its contents?`)) return;
-    await axios.delete(`/api/file?workspace=${workspace}&name=${encodeURIComponent(name)}`);
-    setFiles(files.filter(f => !f.startsWith(name)));
-    setOpenTabs(openTabs.filter(f => !f.startsWith(name)));
-    if (currentFile && currentFile.startsWith(name)) {
-      setCurrentFile('');
-      setCode('');
-      setRunOutput('');
+    try {
+      e.stopPropagation();
+      if (!window.confirm(`Delete folder '${name}' and all its contents?`)) return;
+      
+      await axios.delete(`/api/file?workspace=${workspace}&name=${encodeURIComponent(name)}`);
+      setFiles(files.filter(f => !f.startsWith(name)));
+      setOpenTabs(openTabs.filter(f => !f.startsWith(name)));
+      
+      if (currentFile && currentFile.startsWith(name)) {
+        setCurrentFile('');
+        setCode('');
+        setRunOutput('');
+      }
+    } catch (error) {
+      console.error('Error deleting folder:', error);
+      showNotification('Failed to delete folder');
     }
   };
 
@@ -506,16 +551,27 @@ export default function App() {
 
   const closeTab = (name, e) => {
     e.stopPropagation();
+    
+    // Save current file if it's the one being closed
     if (currentFile === name && code !== undefined) {
       saveFile();
     }
-    const idx = openTabs.indexOf(name);
+    
+    const currentIndex = openTabs.indexOf(name);
     const newTabs = openTabs.filter(f => f !== name);
     setOpenTabs(newTabs);
+    
+    // If we're closing the currently active tab, switch to another tab
     if (currentFile === name) {
       if (newTabs.length > 0) {
-        openFile(newTabs[Math.max(0, idx - 1)]);
+        // Try to open the tab to the left, or the first tab if we're at the beginning
+        const targetIndex = Math.max(0, currentIndex - 1);
+        const targetTab = newTabs[targetIndex];
+        if (targetTab) {
+          openFile(targetTab);
+        }
       } else {
+        // No tabs left, clear the editor
         setCurrentFile('');
         setCode('');
         setRunOutput('');
@@ -533,26 +589,36 @@ export default function App() {
     }
     
     try {
+      // Filter out invalid files and create folder set
+      const validFiles = files.filter(f => typeof f === 'string' && f && !f.startsWith('[object Object]'));
       const folderNames = new Set(
-        files.filter(f => typeof f === 'string' && f.endsWith('/')).map(f => f.slice(0, -1))
+        validFiles.filter(f => f.endsWith('/')).map(f => f.slice(0, -1))
       );
-      const filteredFiles = files.filter(f => {
-        if (typeof f !== 'string') return false;
+      
+      // Filter files to avoid duplicates
+      const filteredFiles = validFiles.filter(f => {
         if (!f.endsWith('/') && folderNames.has(f)) return false; 
         return true;
       });
+      
+      // Build tree structure
       const tree = {};
       filteredFiles.forEach(f => {
-        if (typeof f !== 'string') return;
+        if (!f || typeof f !== 'string') return;
+        
         const parts = f.split('/').filter(Boolean);
         let node = tree;
+        
         parts.forEach((part, i) => {
-          if (typeof part !== 'string') return;
+          if (!part || typeof part !== 'string') return;
+          
           const isLast = i === parts.length - 1;
           const isFolder = f.endsWith('/') && isLast;
+          
           if (!Object.prototype.hasOwnProperty.call(node, part) || (isFolder && node[part] === null)) {
             node[part] = isFolder ? {} : null;
           }
+          
           if (!isLast) {
             if (node[part] === null) node[part] = {};
             node = node[part];
@@ -779,11 +845,33 @@ export default function App() {
 
     if (activeSidebar === 'explorer') {
       return (
-        <div className="explorer">
+        <div className="explorer" style={{ width: explorerWidth }}>
+          <div 
+            className="explorer-resize-handle"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const startX = e.clientX;
+              const startWidth = explorerWidth;
+              
+              const handleMouseMove = (moveEvent) => {
+                const deltaX = moveEvent.clientX - startX;
+                const newWidth = Math.max(200, Math.min(400, startWidth + deltaX));
+                setExplorerWidth(newWidth);
+              };
+              
+              const handleMouseUp = () => {
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+              };
+              
+              document.addEventListener('mousemove', handleMouseMove);
+              document.addEventListener('mouseup', handleMouseUp);
+            }}
+          ></div>
           <div className="explorer-header">
             <span className="explorer-title">Files</span>
             <button className="add-btn" title="New File or Folder" onClick={handleAddFile}>+</button>
-            <button className="add-btn" title="New Folder" onClick={handleAddFolder} style={{marginLeft:4}}><img src={'/folder2.png'} alt="Folder" style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block', verticalAlign: 'middle', marginBottom: '-2px' }} /></button>
+            <button className="add-btn" title="New Folder" onClick={handleAddFolder} style={{marginLeft:4}}><img src={'/folder2.png'} alt="Folder" style={{ width: 14, height: 14, display: 'inline-block', verticalAlign: 'middle' }} /></button>
           </div>
           {renderFileTree(files)}
         </div>
@@ -1094,6 +1182,7 @@ export default function App() {
 
   useEffect(() => {
     const globalPaletteHandler = (e) => {
+      // Command palette (Ctrl+Shift+P)
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
         setShowCommandPalette(true);
         setCommandSearch('');
@@ -1105,10 +1194,82 @@ export default function App() {
         setShowSettingsPanel(true);
         e.preventDefault();
       }
+      // Save file (Ctrl+S)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveFile();
+        showNotification('Saved');
+      }
+      // New file (Ctrl+N)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        handleAddFile();
+      }
+      // Close tab (Ctrl+W)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        if (currentFile) {
+          closeTab(currentFile, { stopPropagation: () => {} });
+        }
+      }
+      // Switch tabs (Ctrl+Tab)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Tab') {
+        e.preventDefault();
+        if (openTabs.length > 1) {
+          const currentIndex = openTabs.indexOf(currentFile);
+          const nextIndex = (currentIndex + 1) % openTabs.length;
+          openFile(openTabs[nextIndex]);
+        }
+      }
     };
     window.addEventListener('keydown', globalPaletteHandler);
     return () => window.removeEventListener('keydown', globalPaletteHandler);
-  }, []);
+  }, [currentFile, openTabs]);
+
+  // Enhanced scrolling for tab bar
+  useEffect(() => {
+    const container = tabsContainerRef.current;
+    if (!container) return;
+
+    let rafId = 0;
+    let targetScrollLeft = container.scrollLeft;
+
+    const smoothScroll = () => {
+      const current = container.scrollLeft;
+      const distance = targetScrollLeft - current;
+      if (Math.abs(distance) < 0.5) {
+        container.scrollLeft = targetScrollLeft;
+        rafId = 0;
+        return;
+      }
+      container.scrollLeft = current + distance * 0.18; // easing
+      rafId = requestAnimationFrame(smoothScroll);
+    };
+
+    const scheduleScrollTo = (next) => {
+      const max = container.scrollWidth - container.clientWidth;
+      targetScrollLeft = Math.max(0, Math.min(max, next));
+      if (!rafId) rafId = requestAnimationFrame(smoothScroll);
+    };
+
+    const onWheel = (e) => {
+      // Always translate predominant wheel delta into horizontal scroll with easing
+      const absX = Math.abs(e.deltaX);
+      const absY = Math.abs(e.deltaY);
+      if (absX < 0.5 && absY < 0.5) return; // tiny noise
+      e.preventDefault();
+      const delta = absX > absY ? e.deltaX : e.deltaY; // pick dominant axis
+      // Increase scroll speed by multiplying delta
+      scheduleScrollTo(container.scrollLeft + (delta * 100));
+    };
+
+    container.addEventListener('wheel', onWheel, { passive: false });
+
+    return () => {
+      container.removeEventListener('wheel', onWheel);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [openTabs]);
 
   useEffect(() => {
     if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
@@ -1331,6 +1492,7 @@ export default function App() {
       if (!isClickingOnContextMenu) {
         setFolderMenu({ path: null, anchor: null });
         setFileMenu({ path: null, anchor: null });
+        setTabMenu({ path: null, anchor: null });
       }
       
       // Close settings menu if clicking outside (but not on the icon)
@@ -1516,6 +1678,26 @@ export default function App() {
       {showInstallButton && deferredPrompt && (
         <button onClick={handleInstallClick} style={{position: 'fixed', top: 16, right: 16, zIndex: 1000, padding: '10px 20px', background: '#181a1b', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.2)'}}>Download App</button>
       )}
+      
+      {/* Notification System */}
+      {notification && (
+        <div style={{
+          position: 'fixed',
+          top: '60px',
+          right: '20px',
+          background: '#4fc3f7',
+          color: '#181a1b',
+          padding: '12px 20px',
+          borderRadius: '6px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          zIndex: 2000,
+          fontSize: '14px',
+          fontWeight: '500',
+          animation: 'slideIn 0.3s ease'
+        }}>
+          {notification}
+        </div>
+      )}
       <div className="topbar">
         <Topbar onMenuAction={handleMenuAction} autoSave={autoSave} />
       </div>
@@ -1570,23 +1752,123 @@ export default function App() {
         <div className="editor-preview-container" style={{flex:1, display:'flex', flexDirection:'column', background:'#23272e', minWidth: 0}}>
           <div className="editor-area" style={{flex:1, background:'#23272e', display:'flex', flexDirection:'column'}}>
             <div className="tabbar">
-              {openTabs.map(f => (
-                <div
-                  key={f}
-                  className={`tab${f === currentFile ? ' active' : ''}`}
-                  onClick={() => openFile(f)}
-                  style={{ display: 'flex', alignItems: 'center' }}
-                >
-                  <span style={{ marginRight: 4, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <img src={getFileIcon(f)} alt={getFileExtension(f) + ' file'} style={{ width: 16, height: 16 }} />
-                  </span>
-                  {f}
-                  <span className="close" onClick={e => closeTab(f, e)}>×</span>
-                </div>
-              ))}
+              <div className="tabs-container" ref={tabsContainerRef} style={{ display: 'flex', alignItems: 'center', overflowX: 'auto', overflowY: 'hidden', flex: 1 }}>
+                {openTabs.map(f => (
+                  <div
+                    key={f}
+                    className={`tab${f === currentFile ? ' active' : ''}`}
+                    onClick={() => openFile(f)}
+                    onContextMenu={e => {
+                      e.preventDefault();
+                      setTabMenu({ path: f, anchor: { x: e.clientX, y: e.clientY } });
+                      setFileMenu({ path: null, anchor: null });
+                      setFolderMenu({ path: null, anchor: null });
+                    }}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center',
+                      minWidth: '120px',
+                      maxWidth: '200px',
+                      position: 'relative'
+                    }}
+                    title={f}
+                  >
+                    <span style={{ marginRight: 4, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <img 
+                        src={getFileIcon(f)} 
+                        alt={getFileExtension(f) + ' file'} 
+                        style={{ width: 16, height: 16 }}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                        }}
+                      />
+                    </span>
+                    <span style={{ 
+                      overflow: 'hidden', 
+                      textOverflow: 'ellipsis', 
+                      whiteSpace: 'nowrap',
+                      flex: 1
+                    }}>
+                      {f}
+                    </span>
+                    <span 
+                      className="close" 
+                      onClick={e => closeTab(f, e)}
+                      style={{
+                        marginLeft: 8,
+                        color: '#888',
+                        fontSize: '1.1em',
+                        cursor: 'pointer',
+                        padding: '2px 4px',
+                        borderRadius: '3px',
+                        flexShrink: 0
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.background = '#3e3e42';
+                        e.target.style.color = '#fff';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.background = 'transparent';
+                        e.target.style.color = '#888';
+                      }}
+                    >
+                      ×
+                    </span>
+                  </div>
+                ))}
+                
+                {/* Tab Context Menu */}
+                {tabMenu.path && tabMenu.anchor && (
+                  <div style={{
+                    position: 'fixed',
+                    left: tabMenu.anchor.x,
+                    top: tabMenu.anchor.y,
+                    background: '#23272e',
+                    color: '#fff',
+                    borderRadius: 6,
+                    boxShadow: '0 2px 12px #0008',
+                    minWidth: 150,
+                    zIndex: 1000,
+                    border: '1px solid #222',
+                    padding: '4px 0',
+                  }}
+                    onClick={e => e.stopPropagation()}
+                    data-context-menu="true"
+                  >
+                    <div
+                      style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333' }}
+                      onClick={e => {
+                        try {
+                          closeTab(tabMenu.path, { stopPropagation: () => {} });
+                          setTabMenu({ path: null, anchor: null });
+                        } catch (error) {
+                          console.error('Error closing tab:', error);
+                          showNotification('Failed to close tab');
+                        }
+                      }}
+                    >Close</div>
+                    <div
+                      style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
+                      onClick={e => {
+                        try {
+                          setOpenTabs([]);
+                          setCurrentFile('');
+                          setCode('');
+                          setRunOutput('');
+                          setTabMenu({ path: null, anchor: null });
+                          showNotification('All tabs closed');
+                        } catch (error) {
+                          console.error('Error closing all tabs:', error);
+                          showNotification('Failed to close all tabs');
+                        }
+                      }}
+                    >Close All</div>
+                  </div>
+                )}
+              </div>
             </div>
             <div style={{flex:1, display:'flex', flexDirection:'column', background:'#23272e'}}>
-              {openTabs.length === 0 || files.length === 0 ? (
+              {openTabs.length === 0 ? (
                 <div style={{
                   display: 'flex',
                   flexDirection: 'column',
@@ -1617,57 +1899,89 @@ export default function App() {
                     fontSize: '16px',
                     color: '#aaa',
                     fontStyle: 'italic',
-                    margin: '0'
+                    margin: '0 0 30px 0'
                   }}>
                     Your AI-powered coding companion
                   </p>
                   <div style={{
-                    marginTop: '40px',
                     display: 'flex',
-                    gap: '20px'
+                    flexDirection: 'column',
+                    gap: '15px',
+                    alignItems: 'center'
                   }}>
-                    {/* <button
-                      onClick={handleAddFile}
-                      style={{
-                        background: '#4fc3f7',
-                        color: '#181a1b',
-                        border: 'none',
-                        borderRadius: '8px',
-                        padding: '12px 24px',
-                        fontSize: '16px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease'
-                      }}
-                      onMouseEnter={(e) => e.target.style.background = '#29b6f6'}
-                      onMouseLeave={(e) => e.target.style.background = '#4fc3f7'}
-                    >
-                      Create New File
-                    </button>
-                    <button
-                      onClick={handleAddFolder}
-                      style={{
-                        background: 'transparent',
-                        color: '#4fc3f7',
-                        border: '2px solid #4fc3f7',
-                        borderRadius: '8px',
-                        padding: '12px 24px',
-                        fontSize: '16px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.target.style.background = '#4fc3f7';
-                        e.target.style.color = '#181a1b';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.target.style.background = 'transparent';
-                        e.target.style.color = '#4fc3f7';
-                      }}
-                    >
-                      Create New Folder
-                    </button> */}
+                    <div style={{
+                      display: 'flex',
+                      gap: '15px',
+                      flexWrap: 'wrap',
+                      justifyContent: 'center'
+                    }}>
+                      {/* <button
+                        onClick={handleAddFile}
+                        style={{
+                          background: '#4fc3f7',
+                          color: '#181a1b',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '12px 24px',
+                          fontSize: '16px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          minWidth: '160px'
+                        }}
+                        onMouseEnter={(e) => e.target.style.background = '#29b6f6'}
+                        onMouseLeave={(e) => e.target.style.background = '#4fc3f7'}
+                      >
+                        Create New File
+                      </button>
+                      <button
+                        onClick={handleAddFolder}
+                        style={{
+                          background: 'transparent',
+                          color: '#4fc3f7',
+                          border: '2px solid #4fc3f7',
+                          borderRadius: '8px',
+                          padding: '12px 24px',
+                          fontSize: '16px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          minWidth: '160px'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.background = '#4fc3f7';
+                          e.target.style.color = '#181a1b';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.background = 'transparent';
+                          e.target.style.color = '#4fc3f7';
+                        }}
+                      >
+                        Create New Folder
+                      </button> */}
+                    </div>
+                    <div style={{
+                      marginTop: '20px',
+                      padding: '20px',
+                      background: 'rgba(79, 195, 247, 0.1)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(79, 195, 247, 0.2)',
+                      maxWidth: '500px'
+                    }}>
+                      <h3 style={{ margin: '0 0 15px 0', color: '#4fc3f7' }}>Quick Start</h3>
+                      <ul style={{ 
+                        textAlign: 'left', 
+                        margin: 0, 
+                        paddingLeft: '20px',
+                        color: '#ccc'
+                      }}>
+                        <li>Use <kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '3px' }}>Ctrl+N</kbd> to create a new file</li>
+                        <li>Use <kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '3px' }}>Ctrl+S</kbd> to save files</li>
+                        <li>Use <kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '3px' }}>Ctrl+Shift+P</kbd> to open command palette</li>
+                        <li>Use <kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '3px' }}>Ctrl+W</kbd> to close tabs</li>
+                        <li>Use <kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '3px' }}>Ctrl+Tab</kbd> to switch between tabs</li>
+                      </ul>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -1677,7 +1991,16 @@ export default function App() {
                   defaultLanguage={getLanguage(currentFile)}
                   value={code || ''}
                   onChange={(value) => setCode(value || '')}
-                  onMount={(editor) => { editorRef.current = editor; }}
+                  onMount={(editor) => { 
+                    try {
+                      editorRef.current = editor;
+                    } catch (error) {
+                      console.error('Error mounting editor:', error);
+                    }
+                  }}
+                  onError={(error) => {
+                    console.error('Monaco Editor error:', error);
+                  }}
                   theme="vs-dark"
                   options={{
                     minimap: { enabled: false },
@@ -1689,6 +2012,34 @@ export default function App() {
                     tabSize: 2,
                     insertSpaces: true,
                     background: '#23272e',
+                    renderWhitespace: 'none',
+                    folding: true,
+                    lineNumbers: 'on',
+                    glyphMargin: true,
+                    selectOnLineNumbers: true,
+                    roundedSelection: false,
+                    readOnly: false,
+                    cursorStyle: 'line',
+                    automaticLayout: true,
+                    contextmenu: true,
+                    mouseWheelZoom: false,
+                    quickSuggestions: true,
+                    suggestOnTriggerCharacters: true,
+                    acceptSuggestionOnEnter: 'on',
+                    tabCompletion: 'on',
+                    wordBasedSuggestions: true,
+                    parameterHints: {
+                      enabled: true
+                    },
+                    autoIndent: 'full',
+                    formatOnPaste: true,
+                    formatOnType: true,
+                    dragAndDrop: true,
+                    links: true,
+                    colorDecorators: true,
+                    lightbulb: {
+                      enabled: true
+                    }
                   }}
                 />
               )}
