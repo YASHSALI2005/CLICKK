@@ -89,7 +89,7 @@ export default function LandingPage({ onInstall, showInstallButton }) {
             <div className="info-blocks">
               <div className="info-box">
                 <h3>Any model for any team</h3>
-                <p>Use AI models like Claude Sonnet out of the box, or bring your own key to access models from Azure, Anthropic, Google, Ollama, OpenAI, and OpenRouter.</p>
+                <p>Use AI models like Claude 3.5 Sonnet via OpenRouter out of the box, or bring your own key to access models from Azure, Anthropic, Google, Ollama, OpenAI, and OpenRouter.</p>
               </div>
               <div className="info-box">
                 <h3>An expert on your codebase</h3>
@@ -179,7 +179,7 @@ export default function LandingPage({ onInstall, showInstallButton }) {
                         <option>Agent</option>
                       </select>
                       <select className="model-select">
-                        <option>Claude Sonnet 4</option>
+                        <option>Claude 3.5 Sonnet (via OpenRouter)</option>
                       </select>
                       <button className="play-button">▶</button>
                       <select className="more-select">

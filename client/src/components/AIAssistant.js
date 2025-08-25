@@ -162,11 +162,10 @@ const AIAssistant = ({
   const agents = [
     { id: 'auto', name: 'Auto', description: 'Automatically choose the best agent' },
     { id: 'perplexity', name: 'Perplexity', description: 'Fast and accurate responses' },
-    { id: 'gemini', name: 'Gemini Pro', description: "Google's advanced AI model" },
+    { id: 'gemini', name: 'Gemini', description: "Google's advanced AI model" },
     { id: 'cohere', name: 'Cohere', description: "Cohere's command model" },
     { id: 'groq', name: 'Groq', description: "Fast inference with Llama 3" },
-    { id: 'claude', name: 'Claude', description: "Anthropic's helpful assistant" },
-    { id: 'gpt4', name: 'GPT-4', description: "OpenAI's most capable model" }
+    { id: 'openrouter', name: 'Open-ai', description: "Access to Claude, GPT-4, and other models" },
   ];
 
   // Ensure chat view scrolls to the most recent message
