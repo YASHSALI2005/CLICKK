@@ -1,2 +1,6 @@
 node_modules/
 server/.env
+client/build
+client/node_modules
+server/node_modules
+./D:\major project\CLICK\server\projects\demo

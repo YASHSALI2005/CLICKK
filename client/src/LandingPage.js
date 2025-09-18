@@ -1,32 +1,10 @@
-import React, { useState } from "react";
-import "./LandingPage.css";
-
-const LandingPage = () => {
-  const [selectedExt, setSelectedExt] = useState("prettier");
-  const [selectedLang, setSelectedLang] = useState("javascript");
-
-  const handleDownload = () => {
-    // Create a temporary link element
-    const link = document.createElement('a');
-    link.href = '/ClickSetup.exe';
-    link.download = 'ClickSetup.exe';
-    
-    // Add click event to trigger download
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    // Check if file exists and handle errors
-    fetch('/ClickSetup.exe', { method: 'HEAD' })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('File not found');
-        }
-      })
-      .catch(error => {
-        console.error('Download error:', error);
-        alert('Download file not found. Please contact support or check back later.');
-      });
+import React from 'react';
+import './LandingPage.css'; // Assuming you have a CSS file for styling
+export default function LandingPage({ onInstall, showInstallButton }) {
+  // Handler to redirect to main app
+  const handleLogoClick = (e) => {
+    e.preventDefault();
+    window.location.href = '/';
   };
 
   return (
@@ -42,7 +20,30 @@ const LandingPage = () => {
             <li><a href="#about">About Us</a></li>
             <li><a href="#faq">FAQ</a></li>
           </ul>
-          <button className="btn-download" onClick={handleDownload}>Download</button>
+{showInstallButton && (
+          <button
+            onClick={onInstall}
+            style={{
+              background: '#03abf4',
+              color: '#fff',
+              border: 'none',
+              padding: '10px 28px',
+              borderRadius: 6,
+              fontWeight: '500',
+              fontSize: '1.1rem',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px #0005',
+              transition: 'background 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              height: '44px',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              Download 
+            </span>
+          </button>
+        )}
         </div>
       </header>
 
@@ -53,10 +54,32 @@ const LandingPage = () => {
             <p>AI Code Editor</p>
 
             <div className="hero-buttons">
-              <button onClick={handleDownload} className="btn-primary download-link">
-                <img src="/windows.png" alt="Windows Logo" className="btn-icon" />
-                Download for Windows
-              </button>
+           {showInstallButton && (
+  <div style={{ display: 'flex', justifyContent: 'center' }}>
+    <button
+      onClick={onInstall}
+      style={{
+        backgroundColor: '#ffffff',
+        color: '#000000',
+        border: 'none',
+        fontSize: '1.2rem',
+        padding: '16px 36px',
+        borderRadius: '8px',
+        fontWeight: 'bold',
+        boxShadow: '0 4px 12px #0005',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+      }}
+    >
+      <img src="/windows.png" alt="Windows" style={{ width: 20, height: 20 }} />
+      <span>Download for Windows</span>
+    </button>
+  </div>
+)}
+
+
             </div>
 
             <div className="video-preview">
@@ -66,7 +89,7 @@ const LandingPage = () => {
             <div className="info-blocks">
               <div className="info-box">
                 <h3>Any model for any team</h3>
-                <p>Use AI models like Claude Sonnet out of the box, or bring your own key to access models from Azure, Anthropic, Google, Ollama, OpenAI, and OpenRouter.</p>
+                <p>Use AI models like Claude 3.5 Sonnet via OpenRouter out of the box, or bring your own key to access models from Azure, Anthropic, Google, Ollama, OpenAI, and OpenRouter.</p>
               </div>
               <div className="info-box">
                 <h3>An expert on your codebase</h3>
@@ -156,9 +179,9 @@ const LandingPage = () => {
                         <option>Agent</option>
                       </select>
                       <select className="model-select">
-                        <option>Claude Sonnet 4</option>
+                        <option>Claude 3.5 Sonnet (via OpenRouter)</option>
                       </select>
-                      <button className="play-button">▶️</button>
+                      <button className="play-button">▶</button>
                       <select className="more-select">
                         <option>⋯</option>
                       </select>
@@ -400,4 +423,3 @@ const LandingPage = () => {
   );
 };
 
-export default LandingPage;
