@@ -3,4 +3,25 @@ server/.env
 client/build
 client/node_modules
 server/node_modules
-./D:\major project\CLICK\server\projects\demo
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Training outputs (large model files)
+training/outputs/
+training/__pycache__/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

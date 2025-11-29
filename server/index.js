@@ -15,7 +15,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, execSync } = require('child_process');
 const WebSocket = require('ws');
 const pty = require('node-pty');
 const find = require('find-process');
@@ -117,11 +117,27 @@ app.post('/api/file', (req, res) => {
 app.delete('/api/file', (req, res) => {
   try {
     const projectRoot = getProjectRoot(req);
-    const filePath = path.join(projectRoot, req.query.name);
+    const rawName = typeof req.query.name === 'string' ? req.query.name : '';
+    const safeName = decodeURIComponent(rawName);
+    const filePath = path.join(projectRoot, safeName);
     if (!fs.existsSync(filePath)) return res.sendStatus(200);
     const stat = fs.lstatSync(filePath);
     if (stat.isDirectory()) {
-      fs.rmSync(filePath, { recursive: true, force: true });
+      try {
+        fs.rmSync(filePath, { recursive: true, force: true });
+      } catch (e) {
+        // Fallback: handle Windows EPERM/EBUSY locks (e.g., node_modules) or deep trees
+        try {
+          if (process.platform === 'win32') {
+            execSync(`cmd /c rmdir /s /q "${filePath}"`, { stdio: 'ignore' });
+          } else {
+            execSync(`rm -rf "${filePath}"`, { stdio: 'ignore' });
+          }
+        } catch (fallbackErr) {
+          console.error('Fallback delete failed:', fallbackErr);
+          throw fallbackErr;
+        }
+      }
     } else {
       fs.unlinkSync(filePath);
     }
@@ -572,7 +588,24 @@ wss.on('connection', function connection(ws, req) {
 // AI Chat endpoint
 app.post('/api/ai/chat', async (req, res) => {
   try {
-    const { message, agent, context } = req.body;
+    let { message, agent, context } = req.body;
+    context = context || {};
+
+    // Enhancement: Detect if editing CSS file, add HTML as context
+    const cssTarget = context.currentFile && context.currentFile.endsWith('.css');
+    if (cssTarget) {
+      const cssPath = context.currentFile;
+      // Look for index.html in the same directory
+      const projectRoot = getProjectRoot(req);
+      const htmlPath = path.join(path.dirname(path.join(projectRoot, cssPath)), 'index.html');
+      if (fs.existsSync(htmlPath)) {
+        try {
+          context.htmlCode = fs.readFileSync(htmlPath, 'utf8');
+        } catch (e) {
+          // ignore if unreadable
+        }
+      }
+    }
     
     if (!message || !message.trim()) {
       return res.status(400).json({ 
@@ -581,34 +614,73 @@ app.post('/api/ai/chat', async (req, res) => {
       });
     }
 
-    const result = await aiService.processMessage(message, agent || 'auto', context || {});
+    const result = await aiService.processMessage(message, agent || 'auto', context);
     
     // Automatically apply code changes if present
     if (result.success && result.codeChanges && result.codeChanges.length > 0) {
       const projectRoot = getProjectRoot(req);
       
-      // Process each code change
+      // Process each code change, supporting nested changes embedded as JSON strings
       let appliedAny = false;
-      for (const change of result.codeChanges) {
+      const queue = Array.isArray(result.codeChanges) ? [...result.codeChanges] : [];
+      while (queue.length) {
+        const change = queue.shift();
         if (change.type === 'modify' || change.type === 'create') {
           if (!change.file) {
             console.warn('Skipping change without file path:', change);
             continue;
           }
-          const filePath = path.join(projectRoot, change.file);
+          // Resolve target path relative to current file when only a basename is provided
+          const ctx = context || {};
+          const contextFile = typeof ctx.currentFile === 'string' && ctx.currentFile.trim() ? ctx.currentFile.trim() : (typeof ctx.currentPath === 'string' ? ctx.currentPath.trim() : '');
+          let unsafePath = change.file;
+          if (!/[\\/]/.test(unsafePath) && contextFile) {
+            const baseDir = path.dirname(contextFile);
+            unsafePath = path.join(baseDir, unsafePath);
+          }
+          // Normalize and sandbox path inside projectRoot
+          const normalizedRel = path.normalize(unsafePath).replace(/^([A-Za-z]:\\|\\|\/)+/, '');
+          const filePath = path.resolve(projectRoot, normalizedRel);
+          if (!filePath.startsWith(path.resolve(projectRoot))) {
+            console.warn('Skipping change outside project root:', change.file);
+            continue;
+          }
+          // If newContent looks like a JSON array of code changes, parse and enqueue instead of writing wrapper file
+          const content = typeof change.newContent === 'string' ? change.newContent.trim() : '';
+          if (content.startsWith('[') && content.endsWith(']')) {
+            try {
+              const parsed = JSON.parse(content);
+              const looksLikeChanges = Array.isArray(parsed) && parsed.every(it => it && typeof it === 'object' && typeof it.type === 'string' && typeof it.file === 'string');
+              if (looksLikeChanges) {
+                queue.push(...parsed);
+                continue;
+              }
+            } catch (_) {
+              // fall through and write as-is
+            }
+          }
           // Ensure directory exists for the file
           const fileDir = path.dirname(filePath);
           if (!fs.existsSync(fileDir)) {
             fs.mkdirSync(fileDir, { recursive: true });
           }
+          // Clean up wrapper fences/backticks if present
+          let toWrite = typeof change.newContent === 'string' ? change.newContent : '';
+          if (toWrite.startsWith('```') && toWrite.trim().endsWith('```')) {
+            const m = toWrite.match(/^```[a-zA-Z0-9_-]*\s*\n([\s\S]*?)\n```\s*$/);
+            if (m) toWrite = m[1];
+          }
+          if (toWrite.startsWith('`') && toWrite.endsWith('`')) {
+            toWrite = toWrite.slice(1, -1);
+          }
           if (change.type === 'modify') {
             // Write the modified content to the file
-            fs.writeFileSync(filePath, change.newContent || '');
+            fs.writeFileSync(filePath, toWrite || '');
             console.log(`Modified file: ${change.file}`);
             appliedAny = true;
           } else {
             // Create the new file with the provided content
-            fs.writeFileSync(filePath, change.newContent || '');
+            fs.writeFileSync(filePath, toWrite || '');
             console.log(`Created file: ${change.file}`);
             appliedAny = true;
           }
