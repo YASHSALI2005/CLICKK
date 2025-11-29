@@ -1,0 +1,21 @@
+ transformers>=4.43.0
+ peft>=0.11.1
+ trl>=0.9.6
+ datasets>=2.20.0
+ bitsandbytes>=0.43.1
+ accelerate>=0.33.0
+ sentencepiece>=0.2.0
+ einops>=0.8.0
+ protobuf>=5.26.1
+ safetensors>=0.4.4
+
+ # Install PyTorch separately per your CUDA/CPU setup:
+ # See https://pytorch.org/get-started/locally/
+
+ # Optional (only if supported by your GPU + CUDA stack):
+ # flash-attn>=2.5.8
+
+# Fast API serving
+fastapi>=0.115.0
+uvicorn>=0.30.0
+

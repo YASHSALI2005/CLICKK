@@ -135,7 +135,8 @@ const AIAssistant = ({
   onFileCreate,
   onFileOpen,
   onClose,
-  onRunCommands
+  onRunCommands,
+  onFilesRefresh
 }) => {
   const [messages, setMessages] = useState(() => {
     try {
@@ -148,6 +149,8 @@ const AIAssistant = ({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState('auto');
+  const [lockedFilePath, setLockedFilePath] = useState(null);
+  const [lockedFileContent, setLockedFileContent] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [chatHistory, setChatHistory] = useState(() => {
     try {
@@ -159,14 +162,35 @@ const AIAssistant = ({
   });
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
-  const agents = [
+  const [agents, setAgents] = useState([
     { id: 'auto', name: 'Auto', description: 'Automatically choose the best agent' },
+    { id: 'local', name: 'Together Local Model', description: 'Run a local model via Together' },
     { id: 'perplexity', name: 'Perplexity', description: 'Fast and accurate responses' },
     { id: 'gemini', name: 'Gemini', description: "Google's advanced AI model" },
     { id: 'cohere', name: 'Cohere', description: "Cohere's command model" },
-    { id: 'groq', name: 'Groq', description: "Fast inference with Llama 3" },
-    { id: 'openrouter', name: 'Open-ai', description: "Access to Claude, GPT-4, and other models" },
-  ];
+    { id: 'groq', name: 'Groq', description: "Fast inference with Llama 3" }
+  ]);
+
+  // Load providers from backend so the list reflects availability (includes local Ollama)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/ai/providers');
+        const data = await res.json();
+        if (!cancelled && data && Array.isArray(data.providers)) {
+          const dynamicAgents = [
+            { id: 'auto', name: 'Auto', description: 'Automatically choose the best agent' },
+            ...data.providers.map(p => ({ id: p.id, name: p.name, description: p.model }))
+          ];
+          setAgents(dynamicAgents);
+        }
+      } catch (e) {
+        // ignore; fallback list already includes 'local'
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Ensure chat view scrolls to the most recent message
   const scrollToBottom = () => {
@@ -242,8 +266,10 @@ const AIAssistant = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: inputValue,
-          agent: selectedAgent,
-          context: { currentFile, currentCode, workspace }
+          agent: lockedFilePath ? 'local' : selectedAgent,
+          context: lockedFilePath
+            ? { currentFile: lockedFilePath, currentCode: lockedFileContent, workspace }
+            : { currentFile, currentCode, workspace }
         })
       });
       const data = await response.json();
@@ -260,6 +286,18 @@ const AIAssistant = ({
             timestamp: new Date().toLocaleTimeString()
           }
         ]);
+        try { onFilesRefresh && onFilesRefresh(); } catch {}
+        try {
+          // If backend already applied changes, and current editor file is among modified/created files, reload it
+          if (data.changesApplied && Array.isArray(data.codeChanges)) {
+            const affected = data.codeChanges
+              .filter(c => c && (c.type === 'modify' || c.type === 'create'))
+              .map(c => c.file);
+            if (affected.includes(currentFile) && typeof onFileOpen === 'function') {
+              onFileOpen(currentFile);
+            }
+          }
+        } catch {}
         // Auto-run project creation commands when present
         try {
           if (data.codeChanges && Array.isArray(data.codeChanges)) {
@@ -462,6 +500,7 @@ const AIAssistant = ({
     setMessages(prev =>
       prev.map(msg => (msg.id === messageId ? { ...msg, changesApplied: true } : msg))
     );
+    try { onFilesRefresh && onFilesRefresh(); } catch {}
   };
 
   const handleKeyPress = (e) => {
@@ -469,6 +508,37 @@ const AIAssistant = ({
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const handleDrop = async (e) => {
+    try {
+      e.preventDefault();
+      const path = e.dataTransfer.getData('text/plain');
+      if (!path) return;
+      // Fetch file content via API
+      const res = await fetch(`/api/file?workspace=${encodeURIComponent(workspace)}&name=${encodeURIComponent(path)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setLockedFilePath(path);
+      setLockedFileContent(data?.content || '');
+      // Optionally switch agent UI to local for clarity
+      setSelectedAgent('local');
+      // Add a system message to confirm the target file
+      try {
+        const base = path.split('/').filter(Boolean).pop();
+        setMessages(prev => [
+          ...prev,
+          { id: Date.now() + 100, type: 'system', content: `Locked target file: ${path}${base ? ` ("${base}")` : ''}`, timestamp: new Date().toLocaleTimeString() }
+        ]);
+      } catch {}
+    } catch (err) {
+      console.warn('Drop handling failed:', err);
+    }
+  };
+
+  const clearLock = () => {
+    setLockedFilePath(null);
+    setLockedFileContent('');
   };
 
   const renderContent = (content) => {
@@ -629,9 +699,14 @@ const AIAssistant = ({
   );
 
   return (
-    <div className="ai-assistant-panel" style={{
-      height:'100%', display:'flex', flexDirection:'column', background:'#222932', color:'#dde4ed'
-    }}>
+    <div
+      className="ai-assistant-panel"
+      style={{
+        height:'100%', display:'flex', flexDirection:'column', background:'#222932', color:'#dde4ed'
+      }}
+      onDragOver={(e) => { try { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } catch {} }}
+      onDrop={handleDrop}
+    >
       {/* AI Assistant Header */}
       <div style={{
         padding: '12px 16px 12px',
@@ -701,6 +776,7 @@ const AIAssistant = ({
                 <option key={agent.id} value={agent.id}>{agent.name}</option>
               ))}
             </select>
+            {/* locked chip moved above chat */}
             <button
               onClick={() => onClose && onClose()}
               title="Close AI Assistant"
@@ -750,6 +826,31 @@ const AIAssistant = ({
           </div>
         </div>
       )}
+      {/* Locked file chip above chat */}
+      {lockedFilePath && (
+        <div style={{
+          padding: '8px 12px',
+          borderTop: '1px solid #1a2a3a',
+          borderBottom: '1px solid #1a2a3a',
+          background: 'linear-gradient(90deg, rgba(34,183,127,0.12) 0%, rgba(34,183,127,0.08) 100%)',
+          display: 'flex', alignItems: 'center', gap: 10
+        }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            border: '1px solid #2a6f57', color: '#9fe7c1', background: 'rgba(34,183,127,0.10)',
+            padding: '3px 8px', borderRadius: 14, fontSize: 12, fontWeight: 700
+          }}>
+            @{(() => { const p = lockedFilePath.split('/').filter(Boolean); return p[p.length-1] || lockedFilePath; })()}
+          </span>
+          <span title={lockedFilePath} style={{ color:'#9ab', fontSize: 12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex: 1 }}>
+            {lockedFilePath}
+          </span>
+          <button onClick={clearLock} style={{
+            background:'transparent', border:'1px solid #2a6f57', color:'#9ab', borderRadius:6, padding:'3px 8px', cursor:'pointer', fontSize:12
+          }}>Clear</button>
+        </div>
+      )}
+
       {/* Messages Area */}
       <div className="ai-messages" style={{
         flex: 1,

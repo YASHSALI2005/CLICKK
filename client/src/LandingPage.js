@@ -81,10 +81,10 @@ export default function LandingPage({ onInstall, showInstallButton }) {
 
 
             </div>
-
+{/* 
             <div className="video-preview">
               <video src="/your-video.mp4" controls className="feature-video" />
-            </div>
+            </div> */}
 
             <div className="info-blocks">
               <div className="info-box">

@@ -8,6 +8,7 @@ import LandingPage from './LandingPage';
 import { FileIcon, defaultStyles } from 'react-file-icon';
 import Topbar from './components/Topbar';
 import AIAssistant from './components/AIAssistant';
+import { VscChevronRight, VscChevronDown, VscFolder, VscFolderOpened, VscFile, VscFileCode, VscFileMedia, VscFileSubmodule, VscFilePdf, VscFileZip } from 'react-icons/vsc';
 
   const SIDEBAR_ICONS = [
   {
@@ -73,14 +74,16 @@ const SETTINGS_MENU = [
 
 const getLanguage = (filename) => {
   if (!filename) return 'plaintext';
-  if (filename.endsWith('.js')) return 'javascript';
-  if (filename.endsWith('.jsx')) return 'React';
-  if (filename.endsWith('.ts')) return 'typescript';
-  if (filename.endsWith('.tsx')) return 'typescript';
-  if (filename.endsWith('.html')) return 'html';
-  if (filename.endsWith('.css')) return 'css';
-  if (filename.endsWith('.py')) return 'python';
-  if (filename.endsWith('.java')) return 'java';
+  const lower = String(filename).toLowerCase().trim();
+  if (lower.endsWith('.js')) return 'javascript';
+  if (lower.endsWith('.php')) return 'php';
+  if (lower.endsWith('.jsx')) return 'React';
+  if (lower.endsWith('.ts')) return 'typescript';
+  if (lower.endsWith('.tsx')) return 'typescript';
+  if (lower.endsWith('.html')) return 'html';
+  if (lower.endsWith('.css')) return 'css';
+  if (lower.endsWith('.py')) return 'python';
+  if (lower.endsWith('.java')) return 'java';
   return 'plaintext';
 };
 
@@ -95,6 +98,7 @@ const getFileIcon = (filename) => {
   if (ext === 'py') return '/icons/file_type_python.svg';
   if (ext === 'html') return '/icons/file_type_html.svg';
   if (ext === 'css') return '/icons/file_type_css.svg';
+  if (ext === 'php') return '/icons/file_type_php.svg';
   if (ext === 'jsx') return '/icons/file_type_reactjs.svg';
   if (ext === 'json') return '/icons/file_type_json.svg';
   if (ext === 'md') return '/icons/file_type_markdown.svg';
@@ -102,6 +106,30 @@ const getFileIcon = (filename) => {
   if (ext === 'ts' || ext === 'tsx') return '/icons/file_type_tsconfig.svg';
   // fallback generic file icon
   return '/icons/folder_type_template.svg';
+};
+
+const getVscodeFileIcon = (filename) => {
+  if (filename.toLowerCase() === '.gitignore') return <VscFile color="#d0021b" title=".gitignore file" />;
+  const ext = filename.split('.').pop().toLowerCase().trim();
+  // Language specific
+  if (["py"].includes(ext)) return <VscFileCode color="#3572A5" title="Python file" />;
+  if (["php"].includes(ext)) return <VscFileCode color="#777BB4" title="PHP file" />;   
+  if (["java"].includes(ext)) return <VscFileCode color="#b07219" title="Java file" />;
+  if (["dart"].includes(ext)) return <VscFileCode color="#0175C2" title="Dart file" />;
+  if (["c"].includes(ext)) return <VscFileCode color="#00599C" title="C file" />;
+  if (["cpp", "cc", "cxx", "hpp", "hh", "hxx"].includes(ext)) return <VscFileCode color="#00599C" title="C++ file" />;
+  if (["h"].includes(ext)) return <VscFileCode color="#6e6e6e" title="C header file" />;
+  // Web & scripts
+  if (["js", "jsx", "ts", "tsx"].includes(ext)) return <VscFileCode color="#ffd700" title="JavaScript/TypeScript file" />;
+  if (["html", "htm"].includes(ext)) return <VscFileCode color="#e34c26" title="HTML file" />;
+  if (["css", "scss", "less"].includes(ext)) return <VscFileCode color="#563d7c" title="CSS/Style file" />;
+  // Data and docs
+  if (["json", "lock"].includes(ext)) return <VscFileSubmodule color="#7ee787" title="JSON/Data file" />;
+  if (["md", "pdf"].includes(ext)) return <VscFilePdf color="#c678dd" title="Document file" />;
+  // Media/archives
+  if (["png", "jpg", "jpeg", "gif", "svg", "bmp", "webp"].includes(ext)) return <VscFileMedia color="#d38cff" title="Image file" />;
+  if (["zip", "rar", "tar", "gz", "7z"].includes(ext)) return <VscFileZip color="#e57373" title="Archive file" />;
+  return <VscFile title="File" />;
 };
 
 export default function App() {
@@ -174,6 +202,67 @@ export default function App() {
       setTimeout(() => setNotification(''), 2000);
     } catch (error) {
       console.error('Error showing notification:', error);
+    }
+  };
+
+  const refreshFiles = async () => {
+    try {
+      const fileRes = await axios.get(`/api/files?workspace=${workspace}`);
+      if (fileRes.data && Array.isArray(fileRes.data)) {
+        setFiles(fileRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')));
+      }
+    } catch (e) {
+      console.warn('Refresh files failed:', e);
+    }
+  };
+
+  const handleRenameFile = async (fullPath, e) => {
+    try {
+      e.stopPropagation();
+      if (!fullPath || typeof fullPath !== 'string' || fullPath.endsWith('/')) return;
+      // Derive parent path and basename
+      const lastSlash = fullPath.lastIndexOf('/');
+      const parent = lastSlash >= 0 ? fullPath.slice(0, lastSlash + 1) : '';
+      const base = lastSlash >= 0 ? fullPath.slice(lastSlash + 1) : fullPath;
+      let newBase = prompt('Enter new file name:', base);
+      if (!newBase) return;
+      newBase = String(newBase).replace(/\\/g, '/').replace(/\//g, '').trim();
+      if (!newBase) return;
+      const newFullPath = parent + newBase;
+
+      if (newFullPath === fullPath) { setFileMenu({ path: null, anchor: null }); return; }
+      // Prevent overwriting existing file
+      if (files.includes(newFullPath)) {
+        alert('A file with this name already exists.');
+        return;
+      }
+
+      // Read old content
+      const fileRes = await axios.get(`/api/file?workspace=${workspace}&name=${encodeURIComponent(fullPath)}`);
+      const content = (fileRes.data && typeof fileRes.data.content === 'string') ? fileRes.data.content : '';
+
+      // Create new file with same content
+      await axios.post(`/api/file?workspace=${workspace}`, { name: newFullPath, content });
+      // Delete old file
+      await axios.delete(`/api/file?workspace=${workspace}&name=${encodeURIComponent(fullPath)}`);
+
+      // Refresh file list
+      const listRes = await axios.get(`/api/files?workspace=${workspace}`);
+      const filtered = Array.isArray(listRes.data) ? listRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')) : [];
+      setFiles(filtered);
+
+      // Update open tabs
+      setOpenTabs(tabs => tabs.map(t => t === fullPath ? newFullPath : t));
+      // Update current file if needed
+      if (currentFile === fullPath) {
+        setCurrentFile(newFullPath);
+        // keep current editor code as-is
+      }
+      setFileMenu({ path: null, anchor: null });
+      showNotification('File renamed');
+    } catch (error) {
+      console.error('Error renaming file:', error);
+      showNotification('Failed to rename file');
     }
   };
 
@@ -468,13 +557,15 @@ export default function App() {
   const handleDeleteFolder = async (name, e) => {
     try {
       e.stopPropagation();
-      if (!window.confirm(`Delete folder '${name}' and all its contents?`)) return;
-      
-      await axios.delete(`/api/file?workspace=${workspace}&name=${encodeURIComponent(name)}`);
-      setFiles(files.filter(f => !f.startsWith(name)));
-      setOpenTabs(openTabs.filter(f => !f.startsWith(name)));
-      
-      if (currentFile && currentFile.startsWith(name)) {
+      // Normalize to ensure trailing slash for folder semantics
+      const folderWithSlash = name.endsWith('/') ? name : name + '/';
+      if (!window.confirm(`Delete folder '${folderWithSlash.replace(/\/$/, '')}' and all its contents?`)) return;
+
+      await axios.delete(`/api/file?workspace=${workspace}&name=${encodeURIComponent(folderWithSlash)}`);
+      setFiles(files.filter(f => !f.startsWith(folderWithSlash)));
+      setOpenTabs(openTabs.filter(f => !f.startsWith(folderWithSlash)));
+
+      if (currentFile && currentFile.startsWith(folderWithSlash)) {
         setCurrentFile('');
         setCode('');
         setRunOutput('');
@@ -482,6 +573,74 @@ export default function App() {
     } catch (error) {
       console.error('Error deleting folder:', error);
       showNotification('Failed to delete folder');
+    }
+  };
+
+  const handleRenameFolder = async (fullPath, e) => {
+    try {
+      e.stopPropagation();
+      if (!fullPath || typeof fullPath !== 'string') return;
+      const normalized = fullPath.endsWith('/') ? fullPath.slice(0, -1) : fullPath;
+      const lastSlash = normalized.lastIndexOf('/');
+      const parent = lastSlash >= 0 ? normalized.slice(0, lastSlash + 1) : '';
+      const base = lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized;
+      let newBase = prompt('Enter new folder name:', base);
+      if (!newBase) return;
+      newBase = String(newBase).replace(/\\/g, '/').replace(/\//g, '').trim();
+      if (!newBase) return;
+      const newFolderNoSlash = parent + newBase;
+      const oldFolderWithSlash = normalized + '/';
+      const newFolderWithSlash = newFolderNoSlash + '/';
+
+      if (newFolderWithSlash === oldFolderWithSlash) { setFolderMenu({ path: null, anchor: null }); return; }
+      // Prevent conflict with existing exact folder path
+      if (files.some(f => f === newFolderWithSlash || f.startsWith(newFolderWithSlash))) {
+        alert('A folder with this name already exists.');
+        return;
+      }
+
+      // Build list of affected entries (folders and files under the old folder)
+      const affected = files.filter(f => f.startsWith(oldFolderWithSlash));
+
+      // Ensure new root folder exists first
+      await axios.post(`/api/file?workspace=${workspace}`, { name: newFolderWithSlash });
+
+      // Recreate tree under new folder
+      for (const entry of affected) {
+        const relative = entry.slice(oldFolderWithSlash.length);
+        const target = newFolderWithSlash + relative;
+        if (entry.endsWith('/')) {
+          await axios.post(`/api/file?workspace=${workspace}`, { name: target });
+        } else {
+          try {
+            const fileRes = await axios.get(`/api/file?workspace=${workspace}&name=${encodeURIComponent(entry)}`);
+            const content = (fileRes.data && typeof fileRes.data.content === 'string') ? fileRes.data.content : '';
+            await axios.post(`/api/file?workspace=${workspace}`, { name: target, content });
+          } catch (readErr) {
+            console.warn('Skipping unreadable file during folder rename:', entry, readErr);
+          }
+        }
+      }
+
+      // Delete old folder tree
+      await axios.delete(`/api/file?workspace=${workspace}&name=${encodeURIComponent(oldFolderWithSlash)}`);
+
+      // Refresh file list
+      const listRes = await axios.get(`/api/files?workspace=${workspace}`);
+      const filtered = Array.isArray(listRes.data) ? listRes.data.filter(f => typeof f === 'string' && !f.startsWith('[object Object]')) : [];
+      setFiles(filtered);
+
+      // Update open tabs and current file
+      setOpenTabs(tabs => tabs.map(t => t.startsWith(oldFolderWithSlash) ? (newFolderWithSlash + t.slice(oldFolderWithSlash.length)) : t));
+      if (currentFile && currentFile.startsWith(oldFolderWithSlash)) {
+        setCurrentFile(newFolderWithSlash + currentFile.slice(oldFolderWithSlash.length));
+      }
+
+      setFolderMenu({ path: null, anchor: null });
+      showNotification('Folder renamed');
+    } catch (error) {
+      console.error('Error renaming folder:', error);
+      showNotification('Failed to rename folder');
     }
   };
 
@@ -582,12 +741,10 @@ export default function App() {
   const renderFileTree = (files) => {
     if (!files || !Array.isArray(files)) {
       return (
-        <div style={{ padding: '16px', color: '#888', textAlign: 'center' }}>
-          No files available
-        </div>
+        <div className="explorer-empty">No files available</div>
       );
     }
-    
+
     try {
       // Filter out invalid files and create folder set
       const validFiles = files.filter(f => typeof f === 'string' && f && !f.startsWith('[object Object]'));
@@ -628,137 +785,42 @@ export default function App() {
       
       const renderNode = (node, path = '', isRoot = false) => {
         if (!node || typeof node !== 'object') return null;
-        
         let entries = Object.entries(node);
         if (entries.length === 0) {
-          return (
-            <div style={{ padding: '8px 16px', color: '#888', fontSize: '12px', fontStyle: 'italic' }}>
-              Empty folder
-            </div>
-          );
+          return <div className="explorer-folder-empty">Empty folder</div>;
         }
-        
+        // Sort folders first (A-Z), then files (A-Z)
+        entries.sort(([a, aChild], [b, bChild]) => {
+          const aIsFolder = aChild && typeof aChild === 'object' && aChild !== null && !Array.isArray(aChild);
+          const bIsFolder = bChild && typeof bChild === 'object' && bChild !== null && !Array.isArray(bChild);
+          if (aIsFolder && !bIsFolder) return -1;
+          if (!aIsFolder && bIsFolder) return 1;
+          return a.localeCompare(b);
+        });
         return (
-          <ul className="file-list" style={{ marginLeft: path ? 16 : 0 }}>
+          <ul className={`file-list${isRoot ? ' root' : ''}` }>
             {entries.map(([name, child]) => {
-              if (typeof name !== 'string') return null;
               const fullPath = path + name;
               const isFolder = child && typeof child === 'object' && child !== null && !Array.isArray(child);
-              
               if (isFolder) {
                 const isOpen = !!openFolders[fullPath];
                 return (
-                  <li key={fullPath} style={{ fontWeight: 600, color: '#4fc3f7', marginBottom: 2, position: 'relative' }}>
+                  <li key={fullPath} className="file-folder">
                     <div
-                      style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+                      className={`explorer-folder-row${isOpen ? ' open' : ''}`}
+                      tabIndex={0}
                       onClick={() => setOpenFolders(f => ({ ...f, [fullPath]: !f[fullPath] }))}
                       onContextMenu={e => {
                         e.preventDefault();
-                        try {
-                          setFolderMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
-                          setFileMenu({ path: null, anchor: null });
-                        } catch (error) {
-                          console.error('Error setting folder menu:', error);
-                        }
+                        setFolderMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
+                        setFileMenu({ path: null, anchor: null });
                       }}
                     >
-                      <img
-                        src={isOpen ? '/dowwnarrow.png' : '/righttarrow.png'}
-                        alt={isOpen ? 'Down Arrow' : 'Right Arrow'}
-                        style={{ width: 16, height: 16, marginRight: 4, userSelect: 'none', display: 'inline-block', verticalAlign: 'middle' }}
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          console.warn('Failed to load arrow image');
-                        }}
-                      />
-                      <img 
-                        src={'/folder2.png'} 
-                        alt="Folder" 
-                        style={{ width: 16, height: 16, marginRight: 4, display: 'inline-block' }}
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          console.warn('Failed to load folder image');
-                        }}
-                      />
-                      {name}
+                      <span className="chevron-icon">{isOpen ? <VscChevronDown /> : <VscChevronRight />}</span>
+                      <span className="folder-icon">{isOpen ? <VscFolderOpened color="#4fc3f7" /> : <VscFolder color="#4fc3f7" />}</span>
+                      <span className="folder-name">{name}</span>
                     </div>
-                    {folderMenu.path === fullPath && folderMenu.anchor && (
-                      <div style={{
-                        position: 'fixed',
-                        left: folderMenu.anchor.x,
-                        top: folderMenu.anchor.y,
-                        background: '#23272e',
-                        color: '#fff',
-                        borderRadius: 6,
-                        boxShadow: '0 2px 12px #0008',
-                        minWidth: 120,
-                        zIndex: 1000,
-                        border: '1px solid #222',
-                        padding: '4px 0',
-                      }}
-                        onClick={e => e.stopPropagation()}
-                        data-context-menu="true"
-                      >
-                        <div
-                          style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333' }}
-                          onClick={() => {
-                            try {
-                              handleAddFile(fullPath + '/');
-                              setFolderMenu({ path: null, anchor: null });
-                            } catch (error) {
-                              console.error('Error adding file:', error);
-                              showNotification('Failed to add file');
-                            }
-                          }}
-                        >New File</div>
-                        <div
-                          style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333' }}
-                          onClick={() => {
-                            try {
-                              handleAddFolder(fullPath + '/');
-                              setFolderMenu({ path: null, anchor: null });
-                            } catch (error) {
-                              console.error('Error adding folder:', error);
-                              showNotification('Failed to add folder');
-                            }
-                          }}
-                        >New Folder</div>
-                        <div
-                          style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', borderBottom: '1px solid #333', display: 'flex', alignItems: 'center' }}
-                          onClick={() => {
-                            try {
-                              handleOpenFolderInTerminal(fullPath);
-                            } catch (error) {
-                              console.error('Error opening folder in terminal:', error);
-                              showNotification('Failed to open folder in terminal');
-                            }
-                          }}
-                        >
-                          <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ marginRight: '8px' }}>
-                            <path d="M4 17h16M8 9l3 3-3 3"/>
-                            <rect x="3" y="5" width="18" height="14" rx="2"/>
-                          </svg>
-                          Open with integrated terminal
-                        </div>
-                        <div
-                          style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
-                          onClick={() => {
-                            try {
-                              handleDeleteFolder(fullPath + '/', { stopPropagation: () => {} });
-                              setFolderMenu({ path: null, anchor: null });
-                            } catch (error) {
-                              console.error('Error deleting folder:', error);
-                              showNotification('Failed to delete folder');
-                            }
-                          }}
-                        >Delete</div>
-                      </div>
-                    )}
-                    {isOpen && (
-                      <div style={{ marginLeft: 16 }}>
-                        {renderNode(child, fullPath + '/')}
-                      </div>
-                    )}
+                    {isOpen && <div className="explorer-folder-children">{renderNode(child, fullPath + '/', false)}</div>}
                   </li>
                 );
               } else {
@@ -766,61 +828,21 @@ export default function App() {
                   <li
                     key={fullPath}
                     className={`file-item${fullPath === currentFile ? ' active' : ''}`}
+                    tabIndex={0}
                     onClick={() => openFile(fullPath)}
                     onContextMenu={e => {
                       e.preventDefault();
-                      try {
-                        setFileMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
-                        setFolderMenu({ path: null, anchor: null });
-                      } catch (error) {
-                        console.error('Error setting file menu:', error);
-                      }
+                      setFileMenu({ path: fullPath, anchor: { x: e.clientX, y: e.clientY } });
+                      setFolderMenu({ path: null, anchor: null });
                     }}
-                    style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
+                    draggable
+                    onDragStart={e => {
+                      e.dataTransfer.setData('text/plain', fullPath);
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
                   >
-                    <span style={{ marginRight: 4, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <img 
-                        src={getFileIcon(name)} 
-                        alt={getFileExtension(name) + ' file'} 
-                        style={{ width: 16, height: 16 }}
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          console.warn('Failed to load file icon');
-                        }}
-                      />
-                    </span>
-                    {name}
-                    {fileMenu.path === fullPath && fileMenu.anchor && (
-                      <div style={{
-                        position: 'fixed',
-                        left: fileMenu.anchor.x,
-                        top: fileMenu.anchor.y,
-                        background: '#23272e',
-                        color: '#fff',
-                        borderRadius: 6,
-                        boxShadow: '0 2px 12px #0008',
-                        minWidth: 120,
-                        zIndex: 1000,
-                        border: '1px solid #222',
-                        padding: '4px 0',
-                      }}
-                        onClick={e => e.stopPropagation()}
-                        data-context-menu="true"
-                      >
-                        <div
-                          style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
-                          onClick={e => {
-                            try {
-                              handleDeleteFile(fullPath, e);
-                              setFileMenu({ path: null, anchor: null });
-                            } catch (error) {
-                              console.error('Error deleting file:', error);
-                              showNotification('Failed to delete file');
-                            }
-                          }}
-                        >Delete</div>
-                      </div>
-                    )}
+                    <span className="filetype-icon">{getVscodeFileIcon(name)}</span>
+                    <span className="file-name">{name}</span>
                   </li>
                 );
               }
@@ -828,15 +850,9 @@ export default function App() {
           </ul>
         );
       };
-      
       return renderNode(tree, '', true);
-    } catch (error) {
-      console.error('Error rendering file tree:', error);
-      return (
-        <div style={{ padding: '16px', color: '#e57373', textAlign: 'center' }}>
-          Error loading files
-        </div>
-      );
+    } catch {
+      return <div className="explorer-error">Error rendering file tree</div>;
     }
   };
 
@@ -1865,6 +1881,79 @@ export default function App() {
                     >Close All</div>
                   </div>
                 )}
+                {/* File Context Menu */}
+                {fileMenu.path && fileMenu.anchor && (
+                  <div style={{
+                    position: 'fixed',
+                    left: fileMenu.anchor.x,
+                    top: fileMenu.anchor.y,
+                    background: '#23272e',
+                    color: '#fff',
+                    borderRadius: 6,
+                    boxShadow: '0 2px 12px #0008',
+                    minWidth: 180,
+                    zIndex: 1000,
+                    border: '1px solid #222',
+                    padding: '4px 0',
+                  }}
+                    onClick={e => e.stopPropagation()}
+                    data-context-menu="true"
+                  >
+                    <div
+                      style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem' }}
+                      onClick={() => { try { openFile(fileMenu.path); } finally { setFileMenu({ path: null, anchor: null }); } }}
+                    >Open</div>
+                    <div
+                      style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem' }}
+                      onClick={(e) => { try { handleRenameFile(fileMenu.path, e); } finally { /* handler closes menu */ } }}
+                    >Rename</div>
+                    <div
+                      style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
+                      onClick={(e) => { try { handleDeleteFile(fileMenu.path, e); } finally { setFileMenu({ path: null, anchor: null }); } }}
+                    >Delete</div>
+                  </div>
+                )}
+
+                {/* Folder Context Menu */}
+                {folderMenu.path && folderMenu.anchor && (
+                  <div style={{
+                    position: 'fixed',
+                    left: folderMenu.anchor.x,
+                    top: folderMenu.anchor.y,
+                    background: '#23272e',
+                    color: '#fff',
+                    borderRadius: 6,
+                    boxShadow: '0 2px 12px #0008',
+                    minWidth: 200,
+                    zIndex: 1000,
+                    border: '1px solid #222',
+                    padding: '4px 0',
+                  }}
+                    onClick={e => e.stopPropagation()}
+                    data-context-menu="true"
+                  >
+                    <div
+                      style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem' }}
+                      onClick={() => { try { handleAddFile(folderMenu.path + '/'); } finally { setFolderMenu({ path: null, anchor: null }); } }}
+                    >New File</div>
+                    <div
+                      style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem' }}
+                      onClick={() => { try { handleAddFolder(folderMenu.path + '/'); } finally { setFolderMenu({ path: null, anchor: null }); } }}
+                    >New Folder</div>
+                    <div
+                      style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem' }}
+                      onClick={(e) => { try { handleRenameFolder(folderMenu.path, e); } finally { /* handler closes menu */ } }}
+                    >Rename</div>
+                    <div
+                      style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem' }}
+                      onClick={() => { try { handleOpenFolderInTerminal(folderMenu.path); } finally { setFolderMenu({ path: null, anchor: null }); } }}
+                    >Open in Terminal</div>
+                    <div
+                      style={{ padding: '8px 16px', cursor: 'pointer', fontSize: '1rem', color: '#e57373' }}
+                      onClick={(e) => { try { handleDeleteFolder(folderMenu.path, e); } finally { setFolderMenu({ path: null, anchor: null }); } }}
+                    >Delete</div>
+                  </div>
+                )}
               </div>
             </div>
             <div style={{flex:1, display:'flex', flexDirection:'column', background:'#23272e'}}>
@@ -2454,6 +2543,7 @@ export default function App() {
               onFileOpen={openFile}
               onClose={() => setIsAIAssistantVisible(false)}
               onRunCommands={(cmds) => runCommandsInTerminal(cmds)}
+              onFilesRefresh={refreshFiles}
             />
           </div>
         )}
