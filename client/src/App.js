@@ -10,6 +10,12 @@ import Topbar from './components/Topbar';
 import AIAssistant from './components/AIAssistant';
 import { VscChevronRight, VscChevronDown, VscFolder, VscFolderOpened, VscFile, VscFileCode, VscFileMedia, VscFileSubmodule, VscFilePdf, VscFileZip } from 'react-icons/vsc';
 
+// Configure Axios base URL so the client can talk to a separately hosted API (e.g. Render Web Service)
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
+if (API_BASE_URL) {
+  axios.defaults.baseURL = API_BASE_URL;
+}
+
   const SIDEBAR_ICONS = [
   {
     key: 'explorer',
