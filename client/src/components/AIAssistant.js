@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './AIAssistant.css';
 
+// Base URL for API requests (configured via REACT_APP_API_BASE_URL in production)
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
+
 // Pretty code block with language label and copy button.
 const CodeBlock = ({ language, code }) => {
   const codeRef = useRef(null);
@@ -176,7 +179,7 @@ const AIAssistant = ({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/ai/providers');
+        const res = await fetch(`${API_BASE_URL}/api/ai/providers`);
         const data = await res.json();
         if (!cancelled && data && Array.isArray(data.providers)) {
           const dynamicAgents = [
