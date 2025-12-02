@@ -1100,13 +1100,32 @@ export default function App() {
 
   const handleGoLive = async () => {
     await saveFile();
-    const goLiveRes = await axios.post(`/api/go-live?workspace=${workspace}`);
-    setLiveStatus(goLiveRes.data);
-    if (currentFile && currentFile.endsWith('.html')) {
-      window.open(`http://localhost:5500/${currentFile}`, '_blank');
-    } else {
-      window.open('http://localhost:5500/', '_blank');
+    try {
+      const goLiveRes = await axios.post(`/api/go-live?workspace=${workspace}`);
+      setLiveStatus(goLiveRes.data);
+    } catch (e) {
+      // Non-fatal for preview
     }
+
+    // Determine preview base URL
+    const apiBase = process.env.REACT_APP_API_BASE_URL || '';
+    let previewBase;
+    if (apiBase) {
+      previewBase = apiBase;
+    } else if (window.location.hostname === 'localhost') {
+      // Local dev: backend runs on 5001
+      previewBase = 'http://localhost:5001';
+    } else {
+      // Same-origin deployment
+      previewBase = `${window.location.protocol}//${window.location.host}`;
+    }
+
+    const fileParam = currentFile && currentFile.endsWith('.html')
+      ? `&file=${encodeURIComponent(currentFile)}`
+      : '';
+
+    const url = `${previewBase}/preview?workspace=${encodeURIComponent(workspace || 'demo')}${fileParam}`;
+    window.open(url, '_blank');
   };
 
   const handleStopLive = async () => {

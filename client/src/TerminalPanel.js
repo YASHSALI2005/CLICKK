@@ -58,10 +58,34 @@ const TerminalPanel = forwardRef((props, ref) => {
     fitAddonRef.current = fitAddon;
 
     const connect = () => {
-      const host = window.location.hostname || 'localhost';
+      // Determine WebSocket base URL
+      let wsBase;
+      const apiBase = process.env.REACT_APP_API_BASE_URL || '';
+
+      if (apiBase) {
+        // Production / Render: derive WS URL from API base (e.g. https://api -> wss://api)
+        try {
+          const apiUrl = new URL(apiBase);
+          const proto = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+          wsBase = `${proto}//${apiUrl.host}`;
+        } catch {
+          // Fallback to current host if parsing fails
+          const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          wsBase = `${proto}//${window.location.host}`;
+        }
+      } else if (window.location.hostname === 'localhost') {
+        // Local dev (React dev server on any port, API server on 5001)
+        wsBase = 'ws://localhost:5001';
+      } else {
+        // Same-origin deployment (server serving the frontend)
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsBase = `${proto}//${window.location.host}`;
+      }
+
       const wsUrl = props.workspace
-        ? `ws://${host}:8081?workspace=${encodeURIComponent(props.workspace)}`
-        : `ws://${host}:8081`;
+        ? `${wsBase}/terminal?workspace=${encodeURIComponent(props.workspace)}`
+        : `${wsBase}/terminal`;
+
       const socket = new window.WebSocket(wsUrl);
       socketRef.current = socket;
 

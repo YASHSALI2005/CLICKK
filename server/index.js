@@ -199,48 +199,65 @@ if (!fs.existsSync(PROJECT_ROOT)) {
   fs.writeFileSync(path.join(PROJECT_ROOT, 'hello.js'), "console.log('Hello, world!');");
 }
 
-let liveServerProcess = null;
-
-// Start Go Live server
+// Go Live endpoints (no extra port; preview is served via /preview)
 app.post('/api/go-live', async (req, res) => {
-  if (liveServerProcess) {
-    return res.status(200).json({ running: true, message: 'Live server already running.' });
-  }
-  // Kill any process using port 5500
-  try {
-    const list = await find('port', 5500);
-    for (const proc of list) {
-      try {
-        process.kill(proc.pid);
-      } catch (e) {
-        console.warn('Could not kill process on port 5500:', e);
-      }
-    }
-  } catch (e) {
-    console.warn('Error finding/killing process on port 5500:', e);
-  }
-  const httpServerPath = require.resolve('http-server/bin/http-server');
-  liveServerProcess = exec(
-    `node "${httpServerPath}" . -p 5500`,
-    { cwd: PROJECT_ROOT },
-    (err, stdout, stderr) => {
-      if (err) {
-        console.error('http-server error:', err);
-      }
-      liveServerProcess = null;
-    }
-  );
-  return res.status(200).json({ running: true, message: 'HTTP server started.' });
+  // No background server to start anymore; preview is always available
+  return res.status(200).json({ running: true, message: 'Preview ready.' });
 });
 
-// Stop Go Live server
 app.post('/api/stop-live', (req, res) => {
-  if (liveServerProcess) {
-    liveServerProcess.kill();
-    liveServerProcess = null;
-    return res.status(200).json({ running: false, message: 'Live server stopped.' });
+  // Nothing to stop; keep API for compatibility
+  return res.status(200).json({ running: false, message: 'Preview stopped.' });
+});
+
+// Serve static assets for workspaces so previews can load CSS/JS correctly
+app.use('/workspace-static', express.static(path.join(__dirname, 'projects')));
+
+// Static preview endpoint for workspaces (HTML/CSS/JS preview)
+app.get('/preview', (req, res) => {
+  try {
+    const projectRoot = getProjectRoot(req);
+    const workspace = req.query.workspace || 'demo';
+    let relPath = req.query.file || 'index.html';
+    // Decode in case the client sent an encoded path (e.g. folder%2Findex.html)
+    try {
+      relPath = decodeURIComponent(relPath);
+    } catch {
+      // ignore decode errors and use raw string
+    }
+    // Prevent paths from escaping the workspace root
+    relPath = String(relPath).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
+
+    let filePath = path.join(projectRoot, relPath);
+    if (fs.existsSync(filePath) && fs.lstatSync(filePath).isDirectory()) {
+      filePath = path.join(filePath, 'index.html');
+    }
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send('Preview file not found');
+    }
+
+    // If it's HTML, inject a <base> tag so relative CSS/JS paths resolve to the workspace folder
+    if (path.extname(filePath).toLowerCase() === '.html') {
+      let html = fs.readFileSync(filePath, 'utf8');
+      const baseHref = `/workspace-static/${encodeURIComponent(workspace)}/`;
+      if (html.includes('<head')) {
+        html = html.replace(
+          /<head([^>]*)>/i,
+          `<head$1><base href="${baseHref}">`
+        );
+      } else {
+        html = `<base href="${baseHref}">` + html;
+      }
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(html);
+    }
+
+    // Non-HTML assets can be sent directly
+    res.sendFile(filePath);
+  } catch (err) {
+    console.error('Preview error:', err);
+    res.status(500).send('Error generating preview');
   }
-  return res.status(200).json({ running: false, message: 'Live server was not running.' });
 });
 
 // Create a new workspace by copying the demo folder
@@ -543,47 +560,50 @@ app.post('/api/git/clean', async (req, res) => {
 // });
 // server.js
 const { spawn } = require('child_process');
+const url = require('url');
 
-const wss = new WebSocket.Server({ port: 8081 });
+// Set up terminal WebSocket on the same HTTP server (works locally and on Render)
+function setupTerminalWebSocket(server) {
+  const wss = new WebSocket.Server({ server, path: '/terminal' });
 
-wss.on('connection', function connection(ws, req) {
-  const url = require('url');
-  const query = url.parse(req.url, true).query;
-  const workspace = query.workspace || 'demo';
-  const cwd = path.join(__dirname, 'projects', workspace);
+  wss.on('connection', function connection(ws, req) {
+    const query = url.parse(req.url, true).query;
+    const workspace = query.workspace || 'demo';
+    const cwd = path.join(__dirname, 'projects', workspace);
 
-  // Ensure workspace directory exists
-  if (!fs.existsSync(cwd)) fs.mkdirSync(cwd, { recursive: true });
+    // Ensure workspace directory exists
+    if (!fs.existsSync(cwd)) fs.mkdirSync(cwd, { recursive: true });
 
-  // Use cmd.exe on Windows, bash otherwise
-  const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
-  const ptyProcess = pty.spawn(shell, [], {
-    name: 'xterm-color',
-    cols: 80,
-    rows: 30,
-    cwd,
-    env: process.env,
+    // Use cmd.exe on Windows, bash otherwise
+    const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
+    const ptyProcess = pty.spawn(shell, [], {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 30,
+      cwd,
+      env: process.env,
+    });
+
+    // Send shell output to client
+    ptyProcess.on('data', function (data) {
+      ws.send(data);
+    });
+
+    // Error handler to prevent crash on EPIPE
+    ptyProcess.on('error', (err) => {
+      console.error('PTY error:', err);
+    });
+
+    // Receive input from client
+    ws.on('message', function incoming(message) {
+      ptyProcess.write(message);
+    });
+
+    ws.on('close', () => {
+      ptyProcess.kill();
+    });
   });
-
-  // Send shell output to client
-  ptyProcess.on('data', function(data) {
-    ws.send(data);
-  });
-
-  // Error handler to prevent crash on EPIPE
-  ptyProcess.on('error', (err) => {
-    console.error('PTY error:', err);
-  });
-
-  // Receive input from client
-  ws.on('message', function incoming(message) {
-    ptyProcess.write(message);
-  });
-
-  ws.on('close', () => {
-    ptyProcess.kill();
-  });
-});
+}
 
 // AI Chat endpoint
 app.post('/api/ai/chat', async (req, res) => {
@@ -769,4 +789,5 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+const server = app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+setupTerminalWebSocket(server);
