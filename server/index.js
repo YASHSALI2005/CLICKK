@@ -15,6 +15,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { exec, execSync } = require('child_process');
 const WebSocket = require('ws');
 const pty = require('node-pty');
@@ -566,8 +567,16 @@ const url = require('url');
 function isDangerousCommand(command, workspaceRoot) {
   if (!command || typeof command !== 'string') return false;
   
-  const cmd = command.trim().toLowerCase();
+  const cmd = command.trim();
+  const cmdLower = cmd.toLowerCase();
+  const projectsDir = path.join(__dirname, 'projects');
+  const normalizedProjectsDir = path.resolve(projectsDir).toLowerCase();
   const normalizedRoot = path.resolve(workspaceRoot).toLowerCase();
+  
+  // CRITICAL: Block ALL cd .. commands (any variation)
+  if (/^\s*cd\s+\.\./.test(cmdLower) || /\bcd\s+\.\./.test(cmdLower)) {
+    return true;
+  }
   
   // Block commands that try to delete parent directories or escape workspace
   const dangerousPatterns = [
@@ -589,43 +598,95 @@ function isDangerousCommand(command, workspaceRoot) {
     /del\s+\/s\s+\/q\s+\.\./,
     /del\s+\/s\s+\/q\s+\.\.\\/,
     /del\s+\/s\s+\/q\s+\.\.\//,
-    // cd to parent directories that would escape workspace
-    /cd\s+\.\.\./,
-    /cd\s+\.\.\s*$/,  // cd .. (at end of command)
-    /cd\s+\.\.\s*&&/,  // cd .. &&
-    /cd\s+\.\.\s*;/,  // cd .. ;
+    // cd to root or absolute paths
     /cd\s+\//,  // cd /
     /cd\s+[A-Za-z]:\\/,  // cd C:\
-    // Commands that try to delete the projects directory itself
+    // Commands that try to delete the projects directory itself (from any location)
     /rm\s+-rf\s+projects/,
+    /rm\s+-rf\s+projects\//,
+    /rm\s+-rf\s+projects\\/,
     /rmdir\s+\/s\s+\/q\s+projects/,
     /del\s+\/s\s+\/q\s+projects/,
   ];
   
   // Check for dangerous patterns
   for (const pattern of dangerousPatterns) {
-    if (pattern.test(cmd)) {
+    if (pattern.test(cmdLower)) {
       return true;
     }
   }
   
   // Additional check: if command contains rm -rf, validate the target path
-  if (/rm\s+-rf/.test(cmd) || /rmdir\s+\/s\s+\/q/.test(cmd) || /del\s+\/s\s+\/q/.test(cmd)) {
-    // Extract the target path from the command
-    const pathMatch = cmd.match(/(?:rm\s+-rf|rmdir\s+\/s\s+\/q|del\s+\/s\s+\/q)\s+["']?([^"'\s&|;]+)["']?/);
+  if (/rm\s+-rf/.test(cmdLower) || /rmdir\s+\/s\s+\/q/.test(cmdLower) || /del\s+\/s\s+\/q/.test(cmdLower)) {
+    // Extract the target path from the command (handle quoted and unquoted paths)
+    const pathMatch = cmdLower.match(/(?:rm\s+-rf|rmdir\s+\/s\s+\/q|del\s+\/s\s+\/q)\s+["']?([^"'\s&|;]+)["']?/);
     if (pathMatch && pathMatch[1]) {
       const targetPath = pathMatch[1];
-      // Resolve the target path relative to workspace root
+      
       try {
-        const resolvedPath = path.resolve(workspaceRoot, targetPath);
+        // Get the projects directory path (absolute)
+        const resolvedProjects = path.resolve(projectsDir);
         const resolvedRoot = path.resolve(workspaceRoot);
+        
+        // CRITICAL: Block if target path contains "projects" (case-insensitive)
+        // This catches "projects", "projects/", "./projects", "../projects", etc.
+        if (targetPath.toLowerCase().includes('projects')) {
+          return true; // Block any deletion involving "projects" from any location
+        }
+        
+        // Try multiple resolution strategies to catch all cases
+        let resolvedPath;
+        
+        // Strategy 1: Resolve relative to workspace root
+        try {
+          resolvedPath = path.resolve(workspaceRoot, targetPath);
+        } catch {
+          resolvedPath = null;
+        }
+        
+        // Strategy 2: If that didn't work or resulted in outside path, try as absolute
+        if (!resolvedPath || !resolvedPath.toLowerCase().startsWith(resolvedRoot.toLowerCase())) {
+          try {
+            resolvedPath = path.resolve(targetPath);
+          } catch {
+            // If resolution fails, block the command
+            return true;
+          }
+        }
+        
+        // CRITICAL: Block if resolved path would affect the projects directory
+        // Check if resolved path is the projects dir or inside it
+        if (resolvedPath.toLowerCase().startsWith(resolvedProjects.toLowerCase())) {
+          return true;
+        }
+        
         // Block if resolved path is outside workspace root
         if (!resolvedPath.toLowerCase().startsWith(resolvedRoot.toLowerCase())) {
           return true;
         }
+        
         // Block if trying to delete the workspace root itself
         if (resolvedPath.toLowerCase() === resolvedRoot.toLowerCase()) {
           return true;
+        }
+        
+        // Additional safety: Check if the target path, when resolved from common parent dirs,
+        // would hit the projects directory
+        const commonParents = [
+          path.dirname(projectsDir), // Parent of projects
+          path.dirname(path.dirname(projectsDir)), // Grandparent
+          process.cwd(), // Current working directory
+        ];
+        
+        for (const parent of commonParents) {
+          try {
+            const testPath = path.resolve(parent, targetPath);
+            if (testPath.toLowerCase().startsWith(resolvedProjects.toLowerCase())) {
+              return true;
+            }
+          } catch {
+            // Ignore resolution errors
+          }
         }
       } catch (e) {
         // If path resolution fails, block the command
@@ -637,6 +698,49 @@ function isDangerousCommand(command, workspaceRoot) {
   return false;
 }
 
+// Validate cd command to ensure it stays within workspace
+function isValidCdCommand(command, workspaceRoot) {
+  if (!command || typeof command !== 'string') return false;
+  
+  const cmd = command.trim();
+  const cmdLower = cmd.toLowerCase();
+  
+  // Extract cd target
+  const cdMatch = cmdLower.match(/^cd\s+["']?([^"'\s&|;]+)["']?/);
+  if (!cdMatch || !cdMatch[1]) {
+    return true; // If we can't parse it, let the shell handle it (it will fail safely)
+  }
+  
+  const targetPath = cdMatch[1];
+  
+  // Block cd .. explicitly
+  if (targetPath === '..' || targetPath.startsWith('../')) {
+    return false;
+  }
+  
+  // Block absolute paths outside workspace
+  if (path.isAbsolute(targetPath)) {
+    const resolvedTarget = path.resolve(targetPath);
+    const resolvedRoot = path.resolve(workspaceRoot);
+    if (!resolvedTarget.toLowerCase().startsWith(resolvedRoot.toLowerCase())) {
+      return false;
+    }
+  }
+  
+  // Block paths that would escape workspace
+  try {
+    const resolvedPath = path.resolve(workspaceRoot, targetPath);
+    const resolvedRoot = path.resolve(workspaceRoot);
+    if (!resolvedPath.toLowerCase().startsWith(resolvedRoot.toLowerCase())) {
+      return false;
+    }
+  } catch (e) {
+    return false;
+  }
+  
+  return true;
+}
+
 // Set up terminal WebSocket on the same HTTP server (works locally and on Render)
 function setupTerminalWebSocket(server) {
   const wss = new WebSocket.Server({ server, path: '/terminal' });
@@ -645,12 +749,39 @@ function setupTerminalWebSocket(server) {
     const query = url.parse(req.url, true).query;
     const workspace = query.workspace || 'demo';
     const cwd = path.join(__dirname, 'projects', workspace);
+    const projectsDir = path.join(__dirname, 'projects');
 
     // Ensure workspace directory exists
     if (!fs.existsSync(cwd)) fs.mkdirSync(cwd, { recursive: true });
 
     // Buffer to accumulate command input until Enter is pressed
     let commandBuffer = '';
+    
+    // Track current working directory to detect when outside workspace
+    let currentWorkingDir = cwd;
+    const resolvedWorkspaceRoot = path.resolve(cwd);
+    const resolvedProjectsDir = path.resolve(projectsDir);
+
+    // Function to check if current directory is within workspace
+    const isWithinWorkspace = (dir) => {
+      if (!dir) return false;
+      try {
+        const resolvedDir = path.resolve(dir);
+        return resolvedDir.toLowerCase().startsWith(resolvedWorkspaceRoot.toLowerCase());
+      } catch {
+        return false;
+      }
+    };
+
+    // Function to reset working directory to workspace root
+    const resetWorkingDirectory = () => {
+      // Send cd command to reset to workspace root
+      const resetCmd = process.platform === 'win32' 
+        ? `cd /d "${cwd.replace(/\\/g, '/')}"\r\n`
+        : `cd "${cwd}"\r\n`;
+      ptyProcess.write(resetCmd);
+      currentWorkingDir = cwd; // Update tracked directory
+    };
 
     // Use cmd.exe on Windows, bash otherwise
     const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
@@ -662,8 +793,80 @@ function setupTerminalWebSocket(server) {
       env: process.env,
     });
 
-    // Send shell output to client
+    // Send shell output to client and track directory changes
     ptyProcess.on('data', function (data) {
+      const output = data.toString();
+      
+      // Parse prompt to detect current directory (for bash/Linux)
+      // Pattern: user@host:~/path$ or user@host:/path$ or user@host:path$
+      // More robust pattern matching
+      const promptPatterns = [
+        /:([~\/][^$#\r\n\s]+)[$#]/,  // :~/path$ or :/path$
+        /:([^$#\r\n\s]+)[$#]/,       // :path$ (fallback)
+      ];
+      
+      for (const pattern of promptPatterns) {
+        const promptMatch = output.match(pattern);
+        if (promptMatch) {
+          const promptPath = promptMatch[1].trim();
+          if (promptPath && promptPath !== '$' && promptPath !== '#') {
+            // Resolve the path from prompt
+            try {
+              let resolved;
+              
+              // Handle ~ (home directory)
+              if (promptPath.startsWith('~')) {
+                const homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();
+                const expandedPath = promptPath.replace('~', homeDir);
+                resolved = path.resolve(expandedPath);
+              } else if (promptPath.startsWith('/')) {
+                // Absolute path
+                resolved = path.resolve(promptPath);
+              } else {
+                // Relative path - resolve from current working dir
+                resolved = path.resolve(currentWorkingDir, promptPath);
+              }
+              
+              // Only update if the directory exists and is different
+              if (fs.existsSync(resolved) && fs.lstatSync(resolved).isDirectory()) {
+                currentWorkingDir = resolved;
+                break; // Found valid directory, stop searching
+              }
+            } catch (e) {
+              // Ignore parsing errors
+            }
+          }
+        }
+      }
+      
+      // Also check for explicit directory indicators in output
+      const dirPatterns = [
+        /PWD=([^\s\r\n]+)/,  // PWD=/path
+        /Current directory: ([^\s\r\n]+)/i,  // Windows style
+        /^([\/~][^\s\r\n]+)[$#]/,  // Path at start of line
+      ];
+      
+      for (const pattern of dirPatterns) {
+        const match = output.match(pattern);
+        if (match && match[1]) {
+          try {
+            let resolved;
+            if (match[1].startsWith('~')) {
+              const homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();
+              resolved = path.resolve(match[1].replace('~', homeDir));
+            } else {
+              resolved = path.resolve(match[1]);
+            }
+            if (fs.existsSync(resolved) && fs.lstatSync(resolved).isDirectory()) {
+              currentWorkingDir = resolved;
+              break;
+            }
+          } catch (e) {
+            // Ignore
+          }
+        }
+      }
+      
       ws.send(data);
     });
 
@@ -683,13 +886,78 @@ function setupTerminalWebSocket(server) {
         const lines = commandBuffer.split(/\r?\n/);
         const command = lines[lines.length - 1] || commandBuffer.trim(); // Get the last line before Enter
         
+        // CRITICAL: Check if we're outside workspace - block ALL commands except cd back
+        if (!isWithinWorkspace(currentWorkingDir)) {
+          // Only allow cd commands that would bring us back into workspace
+          if (/^\s*cd\s+/i.test(command)) {
+            // Check if this cd command would bring us back into workspace
+            const cdMatch = command.match(/^\s*cd\s+["']?([^"'\s&|;]+)["']?/i);
+            if (cdMatch && cdMatch[1]) {
+              try {
+                const targetPath = cdMatch[1];
+                let resolvedTarget;
+                
+                // Handle relative paths
+                if (path.isAbsolute(targetPath)) {
+                  resolvedTarget = path.resolve(targetPath);
+                } else {
+                  resolvedTarget = path.resolve(currentWorkingDir, targetPath);
+                }
+                
+                // If this cd would bring us into workspace, allow it
+                if (isWithinWorkspace(resolvedTarget)) {
+                  // Allow this cd command
+                  currentWorkingDir = resolvedTarget; // Update tracked directory
+                  commandBuffer = '';
+                  ptyProcess.write(message);
+                  return;
+                }
+              } catch (e) {
+                // If path resolution fails, block it
+              }
+            }
+          }
+          
+          // Block all other commands when outside workspace
+          const warning = `\r\n🚫 Security: You are outside the workspace directory. All commands are blocked.\r\n`;
+          ws.send(warning);
+          ws.send(`Please navigate back to workspace: cd "${cwd}"\r\n`);
+          resetWorkingDirectory(); // Force reset to workspace root
+          commandBuffer = '';
+          return;
+        }
+        
+        // Validate cd commands separately (when inside workspace)
+        if (/^\s*cd\s+/i.test(command)) {
+          if (!isValidCdCommand(command, cwd)) {
+            const warning = `\r\n⚠️  Security: Cannot navigate outside workspace directory.\r\n`;
+            ws.send(warning);
+            resetWorkingDirectory(); // Force reset to workspace root
+            commandBuffer = '';
+            return;
+          } else {
+            // Track cd command to update current directory
+            const cdMatch = command.match(/^\s*cd\s+["']?([^"'\s&|;]+)["']?/i);
+            if (cdMatch && cdMatch[1]) {
+              try {
+                const targetPath = cdMatch[1];
+                const resolvedTarget = path.resolve(currentWorkingDir, targetPath);
+                if (fs.existsSync(resolvedTarget)) {
+                  currentWorkingDir = resolvedTarget;
+                }
+              } catch (e) {
+                // Ignore
+              }
+            }
+          }
+        }
+        
         // Validate command before executing
         if (isDangerousCommand(command, cwd)) {
           // Block dangerous command and send warning
           const warning = `\r\n⚠️  Security: Command blocked to prevent deletion of root directory.\r\n`;
           ws.send(warning);
-          // Send a new prompt to the terminal
-          ptyProcess.write('\r'); // Just send Enter to get a new prompt
+          resetWorkingDirectory(); // Force reset to workspace root after blocking
           commandBuffer = ''; // Clear buffer
           return; // Don't execute the command
         }
@@ -699,6 +967,19 @@ function setupTerminalWebSocket(server) {
         // Forward the input to PTY (command is safe)
         ptyProcess.write(message);
       } else {
+        // Check if we're outside workspace - block typing new commands
+        if (!isWithinWorkspace(currentWorkingDir)) {
+          // Don't accumulate input when outside workspace
+          // Just send a warning if they try to type
+          if (commandBuffer.length === 0) {
+            // Only show warning once per command attempt
+            const warning = `\r\n🚫 You are outside workspace. Navigate back first: cd "${cwd}"\r\n`;
+            ws.send(warning);
+          }
+          commandBuffer = ''; // Clear buffer
+          return; // Don't forward input
+        }
+        
         // Accumulate command input (not Enter yet)
         commandBuffer += msg;
         // Forward the input to PTY
