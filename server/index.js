@@ -562,6 +562,81 @@ app.post('/api/git/clean', async (req, res) => {
 const { spawn } = require('child_process');
 const url = require('url');
 
+// Security: Validate commands to prevent dangerous operations
+function isDangerousCommand(command, workspaceRoot) {
+  if (!command || typeof command !== 'string') return false;
+  
+  const cmd = command.trim().toLowerCase();
+  const normalizedRoot = path.resolve(workspaceRoot).toLowerCase();
+  
+  // Block commands that try to delete parent directories or escape workspace
+  const dangerousPatterns = [
+    // rm -rf with parent directory traversal
+    /rm\s+-rf\s+\.\./,
+    /rm\s+-rf\s+\.\.\//,
+    /rm\s+-rf\s+\.\.\\/,
+    /rm\s+-rf\s+\.\.\./,
+    /rm\s+-rf\s+\//,  // rm -rf /
+    /rm\s+-rf\s+[A-Za-z]:\\/,  // rm -rf C:\ or D:\ etc
+    /rm\s+-rf\s+~/,  // rm -rf ~
+    /rm\s+-rf\s+\$HOME/,
+    /rm\s+-rf\s+\$PWD/,
+    // rmdir with parent traversal
+    /rmdir\s+\/s\s+\/q\s+\.\./,
+    /rmdir\s+\/s\s+\/q\s+\.\.\\/,
+    /rmdir\s+\/s\s+\/q\s+\.\.\//,
+    // del with parent traversal
+    /del\s+\/s\s+\/q\s+\.\./,
+    /del\s+\/s\s+\/q\s+\.\.\\/,
+    /del\s+\/s\s+\/q\s+\.\.\//,
+    // cd to parent directories that would escape workspace
+    /cd\s+\.\.\./,
+    /cd\s+\.\.\s*$/,  // cd .. (at end of command)
+    /cd\s+\.\.\s*&&/,  // cd .. &&
+    /cd\s+\.\.\s*;/,  // cd .. ;
+    /cd\s+\//,  // cd /
+    /cd\s+[A-Za-z]:\\/,  // cd C:\
+    // Commands that try to delete the projects directory itself
+    /rm\s+-rf\s+projects/,
+    /rmdir\s+\/s\s+\/q\s+projects/,
+    /del\s+\/s\s+\/q\s+projects/,
+  ];
+  
+  // Check for dangerous patterns
+  for (const pattern of dangerousPatterns) {
+    if (pattern.test(cmd)) {
+      return true;
+    }
+  }
+  
+  // Additional check: if command contains rm -rf, validate the target path
+  if (/rm\s+-rf/.test(cmd) || /rmdir\s+\/s\s+\/q/.test(cmd) || /del\s+\/s\s+\/q/.test(cmd)) {
+    // Extract the target path from the command
+    const pathMatch = cmd.match(/(?:rm\s+-rf|rmdir\s+\/s\s+\/q|del\s+\/s\s+\/q)\s+["']?([^"'\s&|;]+)["']?/);
+    if (pathMatch && pathMatch[1]) {
+      const targetPath = pathMatch[1];
+      // Resolve the target path relative to workspace root
+      try {
+        const resolvedPath = path.resolve(workspaceRoot, targetPath);
+        const resolvedRoot = path.resolve(workspaceRoot);
+        // Block if resolved path is outside workspace root
+        if (!resolvedPath.toLowerCase().startsWith(resolvedRoot.toLowerCase())) {
+          return true;
+        }
+        // Block if trying to delete the workspace root itself
+        if (resolvedPath.toLowerCase() === resolvedRoot.toLowerCase()) {
+          return true;
+        }
+      } catch (e) {
+        // If path resolution fails, block the command
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}
+
 // Set up terminal WebSocket on the same HTTP server (works locally and on Render)
 function setupTerminalWebSocket(server) {
   const wss = new WebSocket.Server({ server, path: '/terminal' });
@@ -573,6 +648,9 @@ function setupTerminalWebSocket(server) {
 
     // Ensure workspace directory exists
     if (!fs.existsSync(cwd)) fs.mkdirSync(cwd, { recursive: true });
+
+    // Buffer to accumulate command input until Enter is pressed
+    let commandBuffer = '';
 
     // Use cmd.exe on Windows, bash otherwise
     const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
@@ -596,11 +674,41 @@ function setupTerminalWebSocket(server) {
 
     // Receive input from client
     ws.on('message', function incoming(message) {
-      ptyProcess.write(message);
+      const msg = message.toString();
+      
+      // Check if Enter was pressed (command complete)
+      if (msg.includes('\r') || msg.includes('\n')) {
+        // Extract the command line (everything before Enter)
+        // Split by newlines and get the last complete line (before the Enter)
+        const lines = commandBuffer.split(/\r?\n/);
+        const command = lines[lines.length - 1] || commandBuffer.trim(); // Get the last line before Enter
+        
+        // Validate command before executing
+        if (isDangerousCommand(command, cwd)) {
+          // Block dangerous command and send warning
+          const warning = `\r\n⚠️  Security: Command blocked to prevent deletion of root directory.\r\n`;
+          ws.send(warning);
+          // Send a new prompt to the terminal
+          ptyProcess.write('\r'); // Just send Enter to get a new prompt
+          commandBuffer = ''; // Clear buffer
+          return; // Don't execute the command
+        }
+        
+        // Reset buffer after processing
+        commandBuffer = '';
+        // Forward the input to PTY (command is safe)
+        ptyProcess.write(message);
+      } else {
+        // Accumulate command input (not Enter yet)
+        commandBuffer += msg;
+        // Forward the input to PTY
+        ptyProcess.write(message);
+      }
     });
 
     ws.on('close', () => {
       ptyProcess.kill();
+      commandBuffer = ''; // Clean up buffer
     });
   });
 }
@@ -740,6 +848,16 @@ app.post('/api/execute-command', (req, res) => {
     // Ensure the directory exists
     if (!fs.existsSync(projectRoot)) {
       fs.mkdirSync(projectRoot, { recursive: true });
+    }
+    
+    // Security: Validate command before execution
+    if (isDangerousCommand(command, projectRoot)) {
+      console.warn(`Blocked dangerous command: ${command}`);
+      return res.status(403).json({ 
+        success: false, 
+        error: 'Security: Command blocked to prevent deletion of root directory.',
+        output: '⚠️  This command has been blocked for security reasons.'
+      });
     }
     
     console.log(`Executing command: ${command} in ${projectRoot}`);
