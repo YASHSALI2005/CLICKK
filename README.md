@@ -1,5 +1,18 @@
 # Clickk: An AI-Powered Code Editor for Intelligent Debugging and Automated Error Resolution
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="Clickk screenshot" width="100%" />
+</p>
+
+<p align="center">
+  <a href="https://clickk-frontend.onrender.com/"><img src="https://img.shields.io/badge/Live%20demo-Open-22c55e?style=for-the-badge" alt="Live demo" /></a>
+  <a href="https://ieeexplore.ieee.org/document/11467195"><img src="https://img.shields.io/badge/IEEE-IC3ET%202026-00629B?style=for-the-badge&logo=ieee&logoColor=white" alt="IEEE paper" /></a>
+  <a href="https://www.yashsali.me"><img src="https://img.shields.io/badge/Portfolio-yashsali.me-7c3aed?style=for-the-badge" alt="Portfolio" /></a>
+</p>
+
+> 📄 Published at **IEEE IC3ET 2026** — *Clickk: An AI-Powered Code Editor for Intelligent Debugging and Automated Error Resolution.*
+> ⏳ The demo runs on a free tier and may take ~1 minute to wake up.
+
 **Clickk** is a modern, full-featured web-based code editor powered by artificial intelligence, designed to revolutionize the way developers write, debug, and maintain code. Built with React and Monaco Editor, Clickk provides an intelligent coding experience with automated error resolution, context-aware AI assistance, and seamless integration of development tools.
 
 ---
