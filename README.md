@@ -508,6 +508,8 @@ Contributions are welcome! Please follow these steps:
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
+For larger changes, please open an issue first so we can discuss the approach before you start.
+
 ### Development Guidelines
 
 - Follow existing code style and conventions
